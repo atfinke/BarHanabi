@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#151c20">
+    <title>Bar Hanabi</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="setup" id="setupView">
+        <div class="setup-title">
+          <h1>Bar Hanabi</h1>
+        </div>
+
+        <div class="setup-actions">
+          <div class="setup-settings" aria-label="Game settings">
+            <label class="setup-setting" for="hintSetting">
+              <span>Hints</span>
+              <select id="hintSetting" name="hints">
+                <option value="8" selected>8</option>
+                <option value="7">7</option>
+                <option value="6">6</option>
+                <option value="5">5</option>
+                <option value="4">4</option>
+                <option value="3">3</option>
+                <option value="2">2</option>
+                <option value="1">1</option>
+              </select>
+            </label>
+            <label class="setup-setting" for="bombSetting">
+              <span>Bombs</span>
+              <select id="bombSetting" name="bombs">
+                <option value="3" selected>3</option>
+                <option value="2">2</option>
+                <option value="1">1</option>
+                <option value="0">0</option>
+              </select>
+            </label>
+            <label class="setup-toggle" for="rainbowSetting">
+              <input id="rainbowSetting" name="rainbow" type="checkbox" checked>
+              <span>Rainbow</span>
+            </label>
+          </div>
+          <button class="primary-button" id="createRoomButton" type="button">Create Game</button>
+          <form class="join-form" id="joinForm">
+            <div class="join-row">
+              <input id="roomCodeInput" name="room" autocomplete="off" inputmode="latin" maxlength="4" aria-label="Game Code" placeholder="Game Code">
+              <button type="submit">Join</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="game hidden" id="gameView">
+        <header class="top-bar">
+          <div class="top-title">
+            <span id="roomCodeLabel"></span>
+          </div>
+          <strong
+            class="turn-title"
+            id="turnStatus"
+            role="button"
+            tabindex="0"
+            aria-label="Double tap to switch player"
+            title="Double tap to switch player"
+          >Their Turn</strong>
+          <div class="top-actions">
+            <label class="auto-clue-toggle" for="autoCluePreviewToggle" title="Auto-send a clue when there is only one valid option">
+              <input id="autoCluePreviewToggle" type="checkbox" aria-label="Auto clue">
+              <span class="auto-clue-track" aria-hidden="true">
+                <span class="auto-clue-thumb"></span>
+              </span>
+              <span class="auto-clue-text">Auto Clue</span>
+            </label>
+            <button class="reset-button danger-outline" type="button" id="resetButton">Restart</button>
+          </div>
+        </header>
+
+        <section class="player-area opponent-area">
+          <div class="clue-label" id="opponentClueLabel" hidden></div>
+          <div class="hand-surface opponent-hand" id="opponentHand" aria-label="Visible hand"></div>
+        </section>
+
+        <section class="table-state">
+          <section class="score-strip" aria-label="Game state">
+            <div>
+              <span>Deck</span>
+              <strong id="deckCount">0</strong>
+            </div>
+            <div>
+              <span>Hints</span>
+              <strong id="hintCount">8</strong>
+            </div>
+            <div>
+              <span>Bombs</span>
+              <strong id="bombCount">0</strong>
+            </div>
+          </section>
+
+          <section class="fireworks" id="fireworks" aria-label="Fireworks"></section>
+
+          <section class="discard-row" aria-label="Discard pile">
+            <div class="discard-buckets">
+              <div class="discard-bucket">
+                <div class="mini-cards" id="neededDiscardPile" aria-label="Needed discards"></div>
+              </div>
+              <div class="discard-bucket">
+                <div class="mini-cards" id="spentDiscardPile" aria-label="Safe discards"></div>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="player-area self-area">
+          <div class="clue-label" id="selfClueLabel" hidden></div>
+          <div class="hand-surface self-hand" id="selfHand" aria-label="Hidden hand"></div>
+        </section>
+
+        <div class="area-actions self-controls">
+          <button type="button" id="selfPlayButton">Play</button>
+          <button type="button" id="selfDiscardButton">Discard</button>
+          <button type="button" id="verbalClueButton">Clue</button>
+        </div>
+      </section>
+
+      <div class="clue-chooser hidden" id="clueChooser" role="dialog" aria-modal="true" aria-labelledby="clueChooserTitle">
+        <div class="clue-chooser-panel">
+          <h2 id="clueChooserTitle">Choose clue</h2>
+          <div class="clue-chooser-options" id="clueChooserOptions"></div>
+          <button class="clue-chooser-cancel" type="button" id="clueChooserCancel">Cancel</button>
+        </div>
+      </div>
+
+      <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

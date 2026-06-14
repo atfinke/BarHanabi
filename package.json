@@ -1,0 +1,14 @@
+{
+  "name": "bar-hanabi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A tiny two-phone Hanabi table app.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
