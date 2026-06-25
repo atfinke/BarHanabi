@@ -36,6 +36,7 @@ const state = {
   hasRenderedRoom: false,
   lastAnimatedResultKey: "",
   discardRenderKey: "",
+  fireworkRenderKey: "",
   tableStateHold: null,
   pendingDrawAnimation: null,
   toastTimer: null,
@@ -142,6 +143,8 @@ window.addEventListener("visibilitychange", () => {
 window.addEventListener("pageshow", () => {
   reconnectCurrentRoom();
 });
+
+installDebugActions();
 
 const initialRoom = readHashRoom();
 if (initialRoom) {
@@ -513,24 +516,51 @@ function resultIdentity(result) {
 
 function renderFireworks(room) {
   const colors = Array.isArray(room.colors) && room.colors.length > 0 ? room.colors : COLORS;
+  const renderKey = fireworkRenderKey(room);
+  if (renderKey === state.fireworkRenderKey) return;
+  state.fireworkRenderKey = renderKey;
+
   fireworks.replaceChildren(
     ...colors.map((color) => {
       const tile = document.createElement("div");
-      tile.className = `firework color-${color.id}`;
+      tile.className = "firework";
       const value = room.fireworks[color.id] || 0;
       const isLastFirework = room.lastResult?.type === "firework" && room.lastResult.color === color.id;
       tile.classList.toggle("empty-firework", value === 0);
-      tile.classList.toggle("last-result-highlight", isLastFirework);
       tile.setAttribute("aria-label", `${color.label} firework ${value}`);
       tile.title = color.label;
 
-      const rank = document.createElement("strong");
-      rank.textContent = value;
+      const cardSlot = document.createElement("div");
+      cardSlot.className = "firework-card-slot";
+      cardSlot.dataset.fireworkColor = color.id;
+      cardSlot.classList.toggle("last-result-highlight", isLastFirework);
+      if (value > 0) {
+        const card = document.createElement("div");
+        card.className = "firework-card";
+        card.append(createCardFace({ color: color.id, rank: value }, { revealImmediately: true }));
+        cardSlot.append(card);
+      } else {
+        const emptyCard = document.createElement("div");
+        emptyCard.className = "firework-empty-card";
+        cardSlot.append(emptyCard);
+      }
 
-      tile.replaceChildren(rank);
+      tile.replaceChildren(cardSlot);
       return tile;
     })
   );
+}
+
+function fireworkRenderKey(room) {
+  const colors = Array.isArray(room.colors) && room.colors.length > 0 ? room.colors : COLORS;
+  const highlight = room.lastResult?.type === "firework"
+    ? [room.lastResult.color, room.lastResult.rank, room.lastResult.cardId].join(":")
+    : "";
+  return [
+    room.code,
+    ...colors.map((color) => `${color.id}:${room.fireworks[color.id] || 0}`),
+    highlight
+  ].join("|");
 }
 
 function renderHand(surface, player, options) {
@@ -622,9 +652,12 @@ function cardHasDetails(card) {
   return COLORS.some((color) => color.id === card.color) && Number.isFinite(Number(card.rank));
 }
 
-function createCardBack() {
+function createCardBack(options = {}) {
   const wrapper = document.createElement("div");
   wrapper.className = "card-back";
+  if (options.revealImmediately) {
+    wrapper.classList.add("asset-loaded");
+  }
   const image = document.createElement("img");
   image.className = "card-back-art";
   image.alt = "";
@@ -636,9 +669,12 @@ function createCardBack() {
   return wrapper;
 }
 
-function createCardFace(card) {
+function createCardFace(card, options = {}) {
   const wrapper = document.createElement("div");
   wrapper.className = "card-face";
+  if (options.revealImmediately) {
+    wrapper.classList.add("asset-loaded");
+  }
 
   const image = document.createElement("img");
   image.className = "card-art";
@@ -1005,6 +1041,68 @@ async function actionSelected(seat, type) {
   }
 }
 
+function installDebugActions() {
+  if (!isLocalDebugHost()) return;
+  window.barHanabiDebug = {
+    playValid: debugPlayValid,
+    playManyValid: debugPlayManyValid
+  };
+}
+
+function isLocalDebugHost() {
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+}
+
+async function debugPlayValid(options = {}) {
+  if (!state.room) {
+    throw new Error("No active room.");
+  }
+
+  const seat = normalizeSeatOption(options.seat || state.mySeat, state.mySeat);
+  const cardId = options.cardId || debugCardIdForSeat(seat);
+  if (!cardId) {
+    throw new Error(`No card available for seat ${seat}.`);
+  }
+
+  const updated = await request("/api/debug/play-valid", {
+    method: "POST",
+    body: {
+      code: state.room.code,
+      viewerSeat: state.mySeat,
+      seat,
+      cardId
+    }
+  });
+  resetLocalSelections({ update: false, keepTableStateHold: true });
+  applyRoomState(updated);
+  return updated;
+}
+
+async function debugPlayManyValid(options = {}) {
+  const count = Math.max(1, Math.trunc(Number(options.count) || 6));
+  const delayMs = Math.max(0, Math.trunc(Number(options.delayMs) || 2900));
+  let latest = null;
+  for (let index = 0; index < count; index += 1) {
+    latest = await debugPlayValid(options);
+    if (index < count - 1 && delayMs > 0) {
+      await wait(delayMs);
+    }
+  }
+  return latest;
+}
+
+function debugCardIdForSeat(seat) {
+  const selectedId = selectedCardIds(seat)[0];
+  if (selectedId) return selectedId;
+  return playerForSeat(seat)?.hand[0]?.id || "";
+}
+
+function wait(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 async function giveVerbalClue() {
   const targetSeat = opponentSeat();
   const targetCardIds = selectedCardIds(targetSeat);
@@ -1328,7 +1426,7 @@ function actionResultPath(result) {
 
   return {
     targetRect,
-    deflectRect: rectSnapshot(attemptedTarget.getBoundingClientRect())
+    deflectRect: fireworkTargetRect(result.card.color) || rectSnapshot(attemptedTarget.getBoundingClientRect())
   };
 }
 
@@ -1350,11 +1448,11 @@ function createActionCardOverlay(snapshot) {
 
   const back = document.createElement("div");
   back.className = "action-card-side action-card-back-side";
-  back.append(createCardBack());
+  back.append(createCardBack({ revealImmediately: true }));
 
   const face = document.createElement("div");
   face.className = "action-card-side action-card-face-side";
-  face.append(createCardFace(snapshot.result.card));
+  face.append(createCardFace(snapshot.result.card, { revealImmediately: true }));
 
   flipper.append(back, face);
   overlay.append(flipper);
@@ -1383,11 +1481,12 @@ function moveActionResultOverlay(overlay, startRect, path) {
 }
 
 function moveActionCardOverlay(overlay, startRect, targetRect, durationMs) {
-  const scale = clamp(targetRect.height / startRect.height, 0.28, 0.54);
+  const rotation = Number(targetRect.rotation) || 0;
+  const scale = actionOverlayTargetScale(startRect, targetRect);
   overlay.style.transitionDuration = `${durationMs}ms`;
   overlay.style.left = `${targetRect.left + targetRect.width / 2 - startRect.width / 2}px`;
   overlay.style.top = `${targetRect.top + targetRect.height / 2 - startRect.height / 2}px`;
-  overlay.style.transform = `rotate(0deg) scale(${scale})`;
+  overlay.style.transform = `rotate(${rotation}deg) scale(${scale})`;
   overlay.classList.add("is-moving");
 }
 
@@ -1409,9 +1508,10 @@ function arcActionCardOverlay(overlay, startRect, targetRect, durationMs) {
     const left = quadraticBezier(current.left, control.left, target.left, eased);
     const top = quadraticBezier(current.top, control.top, target.top, eased);
     const scale = current.scale + (target.scale - current.scale) * eased;
+    const rotation = current.rotation + (target.rotation - current.rotation) * eased;
     overlay.style.left = `${left}px`;
     overlay.style.top = `${top}px`;
-    overlay.style.transform = `rotate(0deg) scale(${scale})`;
+    overlay.style.transform = `rotate(${rotation}deg) scale(${scale})`;
     if (progress < 1) {
       requestAnimationFrame(step);
     }
@@ -1425,7 +1525,8 @@ function currentActionOverlayPlacement(overlay) {
   return {
     left: cssPixels(styles.left),
     top: cssPixels(styles.top),
-    scale: transformScale(styles.transform)
+    scale: transformScale(styles.transform),
+    rotation: transformRotation(styles.transform)
   };
 }
 
@@ -1433,8 +1534,17 @@ function actionOverlayTargetPlacement(startRect, targetRect) {
   return {
     left: targetRect.left + targetRect.width / 2 - startRect.width / 2,
     top: targetRect.top + targetRect.height / 2 - startRect.height / 2,
-    scale: clamp(targetRect.height / startRect.height, 0.28, 0.54)
+    scale: actionOverlayTargetScale(startRect, targetRect),
+    rotation: Number(targetRect.rotation) || 0
   };
+}
+
+function actionOverlayTargetScale(startRect, targetRect) {
+  const rotation = Math.abs((Number(targetRect.rotation) || 0) % 180);
+  if (Math.abs(rotation - 90) < 0.01) {
+    return clamp(targetRect.height / startRect.width, 0.28, 0.72);
+  }
+  return clamp(targetRect.height / startRect.height, 0.28, 0.54);
 }
 
 function transformScale(transform) {
@@ -1442,6 +1552,13 @@ function transformScale(transform) {
   const values = transform.match(/matrix\(([^)]+)\)/)?.[1]?.split(",").map(Number);
   if (!values || values.length < 2) return 1;
   return Math.hypot(values[0], values[1]);
+}
+
+function transformRotation(transform) {
+  if (!transform || transform === "none") return 0;
+  const values = transform.match(/matrix\(([^)]+)\)/)?.[1]?.split(",").map(Number);
+  if (!values || values.length < 2) return 0;
+  return Math.atan2(values[1], values[0]) * 180 / Math.PI;
 }
 
 function quadraticBezier(start, control, end, t) {
@@ -1506,8 +1623,8 @@ function createDrawCardOverlay(replacement, rect) {
   overlay.className = "draw-card-overlay";
   placeDrawCardOverlay(overlay, rect, 0.42);
   overlay.append(replacement.concealed || !cardHasDetails(replacement.card)
-    ? createCardBack()
-    : createCardFace(replacement.card));
+    ? createCardBack({ revealImmediately: true })
+    : createCardFace(replacement.card, { revealImmediately: true }));
   return overlay;
 }
 
@@ -1554,15 +1671,26 @@ function clearPendingDrawAnimation(key, options = {}) {
 }
 
 function actionResultTargetRect(result) {
-  const target = result.type === "firework"
-    ? fireworkElementForColor(result.card.color)
-    : discardElementForCard(result.card.id) || discardEndTargetRect(result.card);
+  if (result.type === "firework") {
+    return fireworkTargetRect(result.card.color);
+  }
+
+  const target = discardElementForCard(result.card.id) || discardEndTargetRect(result.card);
   if (!target) return null;
   return target instanceof Element ? rectSnapshot(target.getBoundingClientRect()) : target;
 }
 
+function fireworkTargetRect(color) {
+  const target = fireworkElementForColor(color);
+  if (!target) return null;
+  return {
+    ...rectSnapshot(target.getBoundingClientRect()),
+    rotation: 90
+  };
+}
+
 function fireworkElementForColor(color) {
-  return [...fireworks.querySelectorAll(".firework")].find((element) => element.classList.contains(`color-${color}`));
+  return fireworks.querySelector(`.firework-card-slot[data-firework-color="${color}"]`);
 }
 
 function discardElementForCard(cardId) {
@@ -1746,7 +1874,7 @@ function createMiniCard(card, highlighted = false) {
   const item = document.createElement("div");
   item.className = "mini-card";
   updateMiniCard(item, card, highlighted);
-  item.replaceChildren(createCardFace(card));
+  item.replaceChildren(createCardFace(card, { revealImmediately: true }));
   return item;
 }
 

@@ -32,14 +32,14 @@ test("discard thumbnails reuse card face artwork", () => {
   const script = fs.readFileSync("public/app.js", "utf8");
   const styles = fs.readFileSync("public/styles.css", "utf8");
 
-  assert.match(script, /item\.replaceChildren\(createCardFace\(card\)\);/);
+  assert.match(script, /item\.replaceChildren\(createCardFace\(card, \{ revealImmediately: true \}\)\);/);
   assert.doesNotMatch(script, /const rank = document\.createElement\("strong"\);[\s\S]*item\.replaceChildren\(rank\);/);
   assert.match(styles, /\.mini-card \.card-face \{/);
 });
 
 test("discard thumbnails preserve card art aspect ratio without clipping", () => {
   const styles = fs.readFileSync("public/styles.css", "utf8");
-  const miniCardBlock = styles.match(/\.mini-card \{([\s\S]*?)\}/)?.[1] || "";
+  const miniCardBlock = styles.match(/\.mini-card \{\s*position: relative;([\s\S]*?)\}/)?.[0] || "";
 
   assert.match(styles, /\.table-card \{[\s\S]*aspect-ratio: 322 \/ 510;/);
   assert.match(miniCardBlock, /aspect-ratio:\s*322 \/ 510;/);
@@ -50,11 +50,10 @@ test("discard thumbnails preserve card art aspect ratio without clipping", () =>
 
 test("discard thumbnail corners scale down from full-size cards", () => {
   const styles = fs.readFileSync("public/styles.css", "utf8");
-  const miniCardBlock = styles.match(/\.mini-card \{([\s\S]*?)\}/)?.[1] || "";
+  const miniCardBlock = styles.match(/\.mini-card \{\s*position: relative;([\s\S]*?)\}/)?.[0] || "";
 
   assert.match(styles, /\.table-card \{[\s\S]*border-radius: 6px;/);
   assert.match(miniCardBlock, /border-radius:\s*4px;/);
-  assert.match(miniCardBlock, /--result-highlight-radius:\s*4px;/);
 });
 
 test("unchanged discard piles are not rebuilt during hand move renders", () => {

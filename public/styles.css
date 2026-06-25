@@ -18,6 +18,12 @@
   --own-selection-style: solid;
   --own-selection-offset: 2px;
   --own-selection-halo: 3px;
+  --result-highlight-enter-duration: 220ms;
+  --result-highlight-exit-duration: 440ms;
+  --result-highlight-easing: ease-out;
+  --result-highlight-enter-scale: 0.94;
+  --table-success-surface-bg: rgba(48, 209, 88, 0.02);
+  --table-success-surface-border: rgba(48, 209, 88, 0.16);
   --other-selection-ring: #c7b7ff;
   --other-selection-glow: transparent;
   --other-selection-style: dotted;
@@ -541,52 +547,153 @@ h2 {
 
 .fireworks {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(48px, 1fr));
   gap: 5px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--table-success-surface-border);
+  border-radius: 8px;
+  background: var(--table-success-surface-bg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .firework {
   position: relative;
-  min-height: 42px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  border-radius: 8px;
-  --result-highlight-radius: 8px;
-  --result-highlight-width: 2px;
-  --result-highlight-offset: 2px;
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  color: var(--card-text, #101010);
-  font-weight: 900;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26);
+  background: transparent;
+  box-shadow: none;
 }
 
-.firework strong {
-  text-shadow:
-    0 1px 2px var(--card-number-shadow, rgba(255, 255, 255, 0.46)),
-    0 0 3px var(--card-number-shadow, rgba(255, 255, 255, 0.46));
-  -webkit-text-stroke: 0.45px var(--card-number-stroke, transparent);
+.firework-card-slot {
+  --firework-card-short-edge: clamp(30px, 8vw, 36px);
+  --firework-slot-color: rgba(235, 237, 240, 0.72);
+  --firework-slot-shadow-color: color-mix(in srgb, var(--firework-slot-color) 30%, transparent);
+  --firework-slot-glow-bg:
+    radial-gradient(
+      ellipse at center,
+      color-mix(in srgb, var(--firework-slot-color) 34%, transparent) 0%,
+      color-mix(in srgb, var(--firework-slot-color) 16%, transparent) 46%,
+      transparent 76%
+    );
+  position: relative;
+  width: calc(var(--firework-card-short-edge) * 510 / 322);
+  height: var(--firework-card-short-edge);
+  isolation: isolate;
+}
+
+.firework-card-slot::before {
+  content: "";
+  position: absolute;
+  inset: -5px -8px;
+  z-index: 0;
+  border-radius: 999px;
+  background: var(--firework-slot-glow-bg);
+  filter: blur(4px);
+  opacity: 0.62;
+  pointer-events: none;
+}
+
+.firework-card-slot[data-firework-color="red"] {
+  --firework-slot-color: var(--red-end);
+}
+
+.firework-card-slot[data-firework-color="yellow"] {
+  --firework-slot-color: var(--yellow-end);
+}
+
+.firework-card-slot[data-firework-color="green"] {
+  --firework-slot-color: var(--green-end);
+}
+
+.firework-card-slot[data-firework-color="blue"] {
+  --firework-slot-color: var(--blue-end);
+}
+
+.firework-card-slot[data-firework-color="white"] {
+  --firework-slot-color: var(--white-start);
+}
+
+.firework-card-slot[data-firework-color="rainbow"] {
+  --firework-slot-glow-bg:
+    conic-gradient(
+      from 315deg at 50% 50%,
+      color-mix(in srgb, var(--rainbow-blue) 34%, transparent),
+      color-mix(in srgb, var(--rainbow-purple) 34%, transparent) 18%,
+      color-mix(in srgb, var(--rainbow-red) 34%, transparent) 35%,
+      color-mix(in srgb, var(--rainbow-orange) 34%, transparent) 52%,
+      color-mix(in srgb, var(--rainbow-yellow) 34%, transparent) 68%,
+      color-mix(in srgb, var(--rainbow-green) 34%, transparent) 84%,
+      color-mix(in srgb, var(--rainbow-blue) 34%, transparent)
+    );
+  --firework-slot-shadow-color: color-mix(in srgb, var(--rainbow-yellow) 28%, transparent);
+}
+
+.firework-card,
+.firework-empty-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--firework-card-short-edge);
+  aspect-ratio: 322 / 510;
+  border-radius: 4px;
+  transform: translate(-50%, -50%) rotate(90deg);
+  transform-origin: center;
+  z-index: 1;
+}
+
+.firework-card {
+  background: transparent;
+  box-shadow:
+    0 0 9px var(--firework-slot-shadow-color),
+    0 7px 14px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.firework-card .card-face {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.firework-empty-card {
+  border: 2px dashed color-mix(in srgb, var(--firework-slot-color) 38%, rgba(235, 237, 240, 0.42));
+  background: rgba(235, 237, 240, 0.035);
+  box-shadow: 0 0 9px var(--firework-slot-shadow-color);
 }
 
 .empty-firework {
   opacity: 1;
 }
 
-.firework.last-result-highlight,
+.firework-card-slot,
+.mini-card {
+  --result-highlight-radius: 4px;
+  --result-highlight-width: 2px;
+  --result-highlight-offset: 2px;
+}
+
+.firework-card-slot.last-result-highlight,
 .mini-card.last-result-highlight {
   position: relative;
   z-index: 1;
 }
 
-.firework.last-result-highlight::after,
+.firework-card-slot.last-result-highlight::after,
 .mini-card.last-result-highlight::after {
   content: "";
   position: absolute;
   inset: calc(var(--result-highlight-offset) * -1);
+  z-index: 2;
   border: var(--result-highlight-width) solid var(--own-selection-ring);
   border-radius: calc(var(--result-highlight-radius) + var(--result-highlight-offset));
+  animation: result-highlight-enter var(--result-highlight-enter-duration) var(--result-highlight-easing) both;
   pointer-events: none;
+  transform-origin: center;
 }
 
 .hand-surface {
@@ -735,7 +842,7 @@ h2 {
   position: fixed;
   z-index: 999;
   pointer-events: none;
-  animation: result-highlight-fade 440ms ease-out forwards;
+  animation: result-highlight-fade var(--result-highlight-exit-duration) var(--result-highlight-easing) forwards;
 }
 
 .action-card-flipper {
@@ -803,6 +910,17 @@ h2 {
   }
 }
 
+@keyframes result-highlight-enter {
+  from {
+    opacity: 0;
+    transform: scale(var(--result-highlight-enter-scale));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .table-card.new-card,
   .table-card.card-exiting {
@@ -818,6 +936,11 @@ h2 {
   .result-highlight-fade {
     animation: none;
     opacity: 0;
+  }
+
+  .firework-card-slot.last-result-highlight::after,
+  .mini-card.last-result-highlight::after {
+    animation: none;
   }
 }
 
@@ -954,9 +1077,6 @@ h2 {
   width: 34px;
   aspect-ratio: 322 / 510;
   border-radius: 4px;
-  --result-highlight-radius: 4px;
-  --result-highlight-width: 2px;
-  --result-highlight-offset: 2px;
   background: transparent;
   overflow: visible;
 }

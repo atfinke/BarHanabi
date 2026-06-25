@@ -4,6 +4,7 @@ const path = require("path");
 const crypto = require("crypto");
 
 const PORT = process.env.PORT || 3000;
+const DEBUG_ACTIONS_ENABLED = process.env.BAR_HANABI_DEBUG_ACTIONS === "1";
 const PUBLIC_DIR = path.join(__dirname, "public");
 const HAND_SIZE = 5;
 const MAX_HINTS = 8;
@@ -453,6 +454,30 @@ function clearLiveCluePreview(room) {
   room.cluePreview = null;
 }
 
+function handleDebugPlayValid(room, action) {
+  const seat = normalizeSeat(action.seat || action.viewerSeat || room.turnSeat);
+  const player = getPlayer(room, seat);
+  if (!player) throw new Error("Unknown seat.");
+
+  const card = takeCard(player, action.cardId ? action : { ...action, index: 0 });
+  room.fireworks[card.color] = clamp(card.rank, 0, 5);
+  room.lastResult = actionResult("firework", "play", player, card);
+  room.hints = clamp(room.hints + 1, 0, room.settings.maxHints);
+  const replacement = drawToHand(room, player, incomingCardLayout(player));
+  clearLiveCluePreview(room);
+  pruneClueSelection(room);
+  clearCommittedClueForActingPlayer(room, player);
+  addLog(
+    room,
+    `Debug valid play: ${player.name} played ${cardName(card)}.${replacement ? " Drew a replacement." : ""}`
+  );
+  if (room.status !== "ended") {
+    advanceTurn(room);
+  }
+  touch(room);
+  return room;
+}
+
 function scoreRoom(room) {
   return Object.values(room.fireworks).reduce((sum, rank) => sum + rank, 0);
 }
@@ -776,6 +801,11 @@ function serveStatic(request, response) {
   });
 }
 
+function isLoopbackRequest(request) {
+  const address = request.socket.remoteAddress || "";
+  return address === "::1" || address === "127.0.0.1" || address === "::ffff:127.0.0.1";
+}
+
 async function router(request, response) {
   const url = new URL(request.url, `http://${request.headers.host}`);
 
@@ -796,6 +826,23 @@ async function router(request, response) {
         return;
       }
       sendJson(response, 200, { code: room.code });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/debug/play-valid") {
+      if (!DEBUG_ACTIONS_ENABLED || !isLoopbackRequest(request)) {
+        sendJson(response, 404, { error: "Not found." });
+        return;
+      }
+      const body = await readJson(request);
+      const code = String(body.code || "").toUpperCase();
+      const room = rooms.get(code);
+      if (!room) {
+        sendJson(response, 404, { error: "Room not found." });
+        return;
+      }
+      const nextRoom = handleDebugPlayValid(room, body);
+      sendJson(response, 200, publicState(nextRoom, normalizeSeat(body.viewerSeat || body.seat)));
       return;
     }
 
