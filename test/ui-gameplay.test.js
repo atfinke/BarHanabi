@@ -176,6 +176,29 @@ test("mobile UI exposes current controls and omits retired controls", () => {
   }
 });
 
+test("room code control copies the full room share link", () => {
+  const html = read("public/index.html");
+  const script = read("public/app.js");
+  const styles = read("public/styles.css");
+
+  assert.match(html, /<button class="room-code-button" id="roomCodeLabel" type="button"[\s\S]*Copy room link[\s\S]*<\/button>/);
+  assert.match(script, /roomCodeLabel\.addEventListener\("click", \(\) => copyRoomLink\(\)\);/);
+  assert.match(script, /function updateRoomCodeLabel\(code\)/);
+  assert.match(script, /roomCodeLabel\.setAttribute\("aria-label", `Copy room link for \$\{code\}`\);/);
+  assert.match(script, /async function copyRoomLink\(\)/);
+  assert.match(script, /const url = roomShareUrl\(code\);/);
+  assert.match(script, /await copyTextToClipboard\(url\);/);
+  assert.match(script, /showToast\("Room link copied\."\);/);
+  assert.match(script, /showToast\(`Copy failed\. Room code: \$\{code\}`\);/);
+  assert.match(script, /function roomShareUrl\(code\)/);
+  assert.match(script, /const url = new URL\(window\.location\.href\);/);
+  assert.match(script, /url\.hash = `room=\$\{encodeURIComponent\(normalizedCode\)\}`;/);
+  assert.match(script, /function copyTextToClipboard\(text\)/);
+  assert.match(script, /navigator\.clipboard\?\.writeText/);
+  assert.match(script, /document\.execCommand\("copy"\)/);
+  assert.match(styles, /\.room-code-button \{/);
+});
+
 test("auto clue checkbox cannot create mobile horizontal overflow", () => {
   const styles = read("public/styles.css");
   const toggleRule = cssRule(styles, ".auto-clue-toggle");

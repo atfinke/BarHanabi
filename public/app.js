@@ -100,6 +100,7 @@ joinForm.addEventListener("submit", async (event) => {
 
 turnStatus.addEventListener("click", handleTurnStatusTap);
 turnStatus.addEventListener("keydown", handleTurnStatusKeyDown);
+roomCodeLabel.addEventListener("click", () => copyRoomLink());
 selfPlayButton.addEventListener("click", () => actionSelected(state.mySeat, "play"));
 selfDiscardButton.addEventListener("click", () => actionSelected(state.mySeat, "discard"));
 verbalClueButton.addEventListener("click", () => giveVerbalClue());
@@ -177,8 +178,13 @@ async function enterRoom(code, options = {}) {
   window.location.hash = `room=${encodeURIComponent(normalizedCode)}`;
   setupView.classList.add("hidden");
   gameView.classList.remove("hidden");
-  roomCodeLabel.textContent = normalizedCode;
+  updateRoomCodeLabel(normalizedCode);
   connectEvents(normalizedCode);
+}
+
+function updateRoomCodeLabel(code) {
+  roomCodeLabel.textContent = code;
+  roomCodeLabel.setAttribute("aria-label", `Copy room link for ${code}`);
 }
 
 function roomSeatKey(code) {
@@ -349,6 +355,57 @@ async function action(payload, options = {}) {
   }
 }
 
+async function copyRoomLink() {
+  const code = state.currentCode || state.room?.code || roomCodeLabel.textContent.trim();
+  if (!code) return;
+
+  const url = roomShareUrl(code);
+  try {
+    await copyTextToClipboard(url);
+    showToast("Room link copied.");
+  } catch (error) {
+    showToast(`Copy failed. Room code: ${code}`);
+  }
+}
+
+function roomShareUrl(code) {
+  const normalizedCode = String(code || "").trim().toUpperCase();
+  const url = new URL(window.location.href);
+  url.hash = `room=${encodeURIComponent(normalizedCode)}`;
+  return url.toString();
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  if (typeof document.execCommand !== "function") {
+    throw new Error("Clipboard unavailable.");
+  }
+
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.setAttribute("readonly", "");
+  field.style.position = "fixed";
+  field.style.left = "-999px";
+  field.style.top = "0";
+  field.style.opacity = "0";
+  document.body.append(field);
+  field.focus();
+  field.select();
+  field.setSelectionRange(0, field.value.length);
+  try {
+    const copied = document.execCommand("copy");
+    if (!copied) {
+      throw new Error("Copy command failed.");
+    }
+  } finally {
+    field.remove();
+  }
+}
+
 function scheduleAction(payload, options = {}) {
   setTimeout(() => {
     action(payload, options);
@@ -361,7 +418,7 @@ function render() {
   const me = playerForSeat(state.mySeat);
   const other = playerForSeat(opponentSeat());
   const tableRoom = tableDisplayRoom();
-  roomCodeLabel.textContent = state.room.code;
+  updateRoomCodeLabel(state.room.code);
   const isMyTurn = state.room.turnSeat === state.mySeat;
 
   turnStatus.textContent = turnStatusText(isMyTurn);

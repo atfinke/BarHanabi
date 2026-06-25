@@ -302,12 +302,31 @@ h2 {
   text-align: center;
 }
 
-.top-title span {
+.room-code-button {
   flex: 0 0 auto;
+  min-height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--muted);
+  padding: 0 2px;
+  box-shadow: none;
   font-size: 0.72rem;
   font-weight: 700;
+  line-height: 1;
   text-transform: uppercase;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.room-code-button:active {
+  transform: none;
+  color: var(--text);
+}
+
+.room-code-button:focus-visible {
+  outline: 2px solid rgba(90, 200, 250, 0.72);
+  outline-offset: 2px;
 }
 
 .inline-title span {
