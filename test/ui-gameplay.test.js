@@ -25,6 +25,7 @@ function fakeElement() {
   return {
     checked: false,
     disabled: false,
+    dataset: {},
     textContent: "",
     classList: {
       add() {},
@@ -74,7 +75,7 @@ function loadClientForUiStateTest() {
   };
 
   vm.runInNewContext(
-    `${read("public/app.js")}\nglobalThis.__client = { state, updateActionButtons, selfPlayButton, selfDiscardButton };`,
+    `${read("public/app.js")}\nglobalThis.__client = { state, updateActionButtons, updateRoomCodeLabel, roomCodeLabel, selfPlayButton, selfDiscardButton };`,
     sandbox
   );
   return sandbox.__client;
@@ -184,7 +185,7 @@ test("room code control copies the full room share link", () => {
   assert.match(html, /<button class="room-code-button" id="roomCodeLabel" type="button"[\s\S]*Copy room link[\s\S]*<\/button>/);
   assert.match(script, /roomCodeLabel\.addEventListener\("click", \(\) => copyRoomLink\(\)\);/);
   assert.match(script, /function updateRoomCodeLabel\(code\)/);
-  assert.match(script, /roomCodeLabel\.setAttribute\("aria-label", `Copy room link for \$\{code\}`\);/);
+  assert.match(script, /roomCodeLabel\.setAttribute\("aria-label", `Copy room link for \$\{normalizedCode\}`\);/);
   assert.match(script, /async function copyRoomLink\(\)/);
   assert.match(script, /const url = roomShareUrl\(code\);/);
   assert.match(script, /await copyTextToClipboard\(url\);/);
@@ -197,6 +198,40 @@ test("room code control copies the full room share link", () => {
   assert.match(script, /navigator\.clipboard\?\.writeText/);
   assert.match(script, /document\.execCommand\("copy"\)/);
   assert.match(styles, /\.room-code-button \{/);
+});
+
+test("room code chip hides the code only while the other player is connected", () => {
+  const client = loadClientForUiStateTest();
+  client.state.currentCode = "K7Q2";
+  client.state.mySeat = "A";
+  client.state.isOnline = true;
+  client.state.room = {
+    code: "K7Q2",
+    presence: { A: true, B: false }
+  };
+
+  client.updateRoomCodeLabel("K7Q2");
+
+  assert.equal(client.roomCodeLabel.textContent, "K7Q2");
+  assert.equal(client.roomCodeLabel.dataset.presence, "code");
+
+  client.state.room.presence.B = true;
+  client.updateRoomCodeLabel("K7Q2");
+
+  assert.equal(client.roomCodeLabel.textContent, "Connected");
+  assert.equal(client.roomCodeLabel.dataset.presence, "connected");
+
+  client.state.room.presence.B = false;
+  client.updateRoomCodeLabel("K7Q2");
+
+  assert.equal(client.roomCodeLabel.textContent, "K7Q2");
+  assert.equal(client.roomCodeLabel.dataset.presence, "code");
+
+  client.state.isOnline = false;
+  client.updateRoomCodeLabel("K7Q2");
+
+  assert.equal(client.roomCodeLabel.textContent, "Reconnecting");
+  assert.equal(client.roomCodeLabel.dataset.presence, "reconnecting");
 });
 
 test("auto clue checkbox cannot create mobile horizontal overflow", () => {

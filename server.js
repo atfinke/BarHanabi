@@ -229,6 +229,7 @@ function publicState(room, viewerSeat = "") {
     score: scoreRoom(room),
     maxScore: room.colors.length * 5,
     turnSeat: room.turnSeat,
+    presence: connectedSeatPresence(room.code),
     players: room.players.map((player) => ({
       ...player,
       hand: player.hand.map((card) => {
@@ -243,6 +244,19 @@ function publicState(room, viewerSeat = "") {
     })),
     log: room.log
   };
+}
+
+function connectedSeatPresence(roomCode) {
+  const roomSubscribers = subscribers.get(roomCode);
+  const presence = { A: false, B: false };
+  if (!roomSubscribers) return presence;
+
+  for (const subscriber of roomSubscribers) {
+    if (subscriber.viewerSeat === "A" || subscriber.viewerSeat === "B") {
+      presence[subscriber.viewerSeat] = true;
+    }
+  }
+  return presence;
 }
 
 function touch(room) {
@@ -667,6 +681,7 @@ function subscribe(roomCode, viewerSeat, response) {
 
   const subscriber = { viewerSeat, response };
   subscribers.get(roomCode).add(subscriber);
+  broadcast(roomCode);
   const heartbeat = setInterval(() => {
     response.write(": heartbeat\n\n");
   }, 25000);
@@ -677,7 +692,9 @@ function subscribe(roomCode, viewerSeat, response) {
     roomSubscribers.delete(subscriber);
     if (roomSubscribers.size === 0) {
       subscribers.delete(roomCode);
+      return;
     }
+    broadcast(roomCode);
   });
 }
 
@@ -811,7 +828,6 @@ async function router(request, response) {
       const viewerSeat = normalizeSeat(url.searchParams.get("seat"));
       response.write("retry: 2000\n\n");
       subscribe(code, viewerSeat, response);
-      response.write(`event: state\ndata: ${JSON.stringify(publicState(room, viewerSeat))}\n\n`);
       return;
     }
 

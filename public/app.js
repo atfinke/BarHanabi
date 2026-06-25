@@ -31,6 +31,7 @@ const state = {
   pendingAction: false,
   pendingRoom: null,
   events: null,
+  isOnline: false,
   seenCardIds: new Set(),
   hasRenderedRoom: false,
   lastAnimatedResultKey: "",
@@ -183,8 +184,21 @@ async function enterRoom(code, options = {}) {
 }
 
 function updateRoomCodeLabel(code) {
-  roomCodeLabel.textContent = code;
-  roomCodeLabel.setAttribute("aria-label", `Copy room link for ${code}`);
+  const normalizedCode = String(code || state.currentCode || state.room?.code || "").trim().toUpperCase();
+  const status = roomCodeStatus(normalizedCode);
+  roomCodeLabel.textContent = status.label;
+  roomCodeLabel.dataset.presence = status.presence;
+  roomCodeLabel.setAttribute("aria-label", `Copy room link for ${normalizedCode}`);
+}
+
+function roomCodeStatus(code) {
+  if (state.room && !state.isOnline) {
+    return { label: "Reconnecting", presence: "reconnecting" };
+  }
+  if (otherPlayerConnected()) {
+    return { label: "Connected", presence: "connected" };
+  }
+  return { label: code, presence: "code" };
 }
 
 function roomSeatKey(code) {
@@ -1784,6 +1798,10 @@ function opponentSeat() {
   return state.mySeat === "A" ? "B" : "A";
 }
 
+function otherPlayerConnected() {
+  return Boolean(state.room?.presence?.[opponentSeat()]);
+}
+
 function colorLabel(colorId) {
   const color = COLORS.find((item) => item.id === colorId);
   return color ? color.label : colorId;
@@ -1800,7 +1818,9 @@ function turnStatusText(isMyTurn) {
 }
 
 function setConnection(isOnline) {
+  state.isOnline = isOnline;
   gameView.dataset.connection = isOnline ? "online" : "offline";
+  updateRoomCodeLabel();
 }
 
 function showToast(message) {
