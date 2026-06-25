@@ -144,12 +144,17 @@ test("mobile UI exposes current controls and omits retired controls", () => {
   const resetButtonBlocks = styles.match(/\.reset-button\s*\{[^}]*\}/g) || [];
   assert.ok(resetButtonBlocks.length > 0);
   assert.match(html, /id="resetButton"[\s\S]*>Restart<\/button>/);
+  assert.doesNotMatch(html, /id="resetButton"[^>]*danger-outline/);
 
   const autoClueRule = cssRule(styles, ".auto-clue-toggle");
   const resetButtonRule = cssRule(styles, ".reset-button");
   const mobileStyles = styles.slice(styles.indexOf("@media (max-width: 520px)"));
   const mobileAutoClueRule = cssRule(mobileStyles, ".auto-clue-toggle");
   const mobileResetButtonRule = cssRule(mobileStyles, ".reset-button");
+
+  for (const property of ["border", "background", "color"]) {
+    assert.equal(declarationValue(resetButtonRule, property), declarationValue(autoClueRule, property));
+  }
 
   for (const property of ["font-size", "font-weight", "line-height", "text-transform"]) {
     assert.equal(declarationValue(resetButtonRule, property), declarationValue(autoClueRule, property));

@@ -449,16 +449,16 @@ h2 {
 .reset-button {
   flex: 0 0 auto;
   min-height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 9px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--muted);
   padding: 0 8px;
+  box-shadow: none;
   font-size: 0.68rem;
   font-weight: 850;
   line-height: 1;
   text-transform: uppercase;
-}
-
-.reset-button {
-  background: rgba(255, 55, 95, 0.09);
 }
 
 .score-strip,
