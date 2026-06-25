@@ -14,6 +14,12 @@ function cssRule(styles, selector) {
   return styles.slice(start, end + 2);
 }
 
+function declarationValue(rule, property) {
+  const match = rule.match(new RegExp(`${property}:\\s*([^;]+);`));
+  assert.ok(match, `Missing ${property} in ${rule}`);
+  return match[1];
+}
+
 test("setup screen exposes game creation and join controls", () => {
   const html = read("public/index.html");
 
@@ -77,8 +83,19 @@ test("mobile UI exposes current controls and omits retired controls", () => {
   const resetButtonBlocks = styles.match(/\.reset-button\s*\{[^}]*\}/g) || [];
   assert.ok(resetButtonBlocks.length > 0);
   assert.match(html, /id="resetButton"[\s\S]*>Restart<\/button>/);
-  for (const block of resetButtonBlocks) {
-    assert.doesNotMatch(block, /text-transform:\s*uppercase/);
+
+  const autoClueRule = cssRule(styles, ".auto-clue-toggle");
+  const resetButtonRule = cssRule(styles, ".reset-button");
+  const mobileStyles = styles.slice(styles.indexOf("@media (max-width: 520px)"));
+  const mobileAutoClueRule = cssRule(mobileStyles, ".auto-clue-toggle");
+  const mobileResetButtonRule = cssRule(mobileStyles, ".reset-button");
+
+  for (const property of ["font-size", "font-weight", "line-height", "text-transform"]) {
+    assert.equal(declarationValue(resetButtonRule, property), declarationValue(autoClueRule, property));
+    assert.equal(
+      declarationValue(mobileResetButtonRule, property),
+      declarationValue(mobileAutoClueRule, property)
+    );
   }
 
   for (const retired of [

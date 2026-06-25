@@ -415,6 +415,7 @@ h2 {
   font-size: 0.68rem;
   font-weight: 850;
   line-height: 1;
+  text-transform: uppercase;
 }
 
 .reset-button {
@@ -1157,6 +1158,8 @@ h2 {
     padding-inline: 7px;
     font-size: 0.54rem;
     font-weight: 900;
+    line-height: 0.86;
+    text-transform: none;
   }
 
   .table-card {
