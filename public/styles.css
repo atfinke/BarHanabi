@@ -22,6 +22,11 @@
   --result-highlight-exit-duration: 440ms;
   --result-highlight-easing: ease-out;
   --result-highlight-enter-scale: 0.94;
+  --control-state-duration: 180ms;
+  --control-state-easing: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --selection-state-duration: 180ms;
+  --selection-state-easing: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --selection-state-enter-scale: 0.92;
   --table-success-surface-bg: rgba(48, 209, 88, 0.02);
   --table-success-surface-border: rgba(48, 209, 88, 0.16);
   --other-selection-ring: #c7b7ff;
@@ -102,6 +107,14 @@ button {
   padding: 0 12px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   touch-action: manipulation;
+  transition:
+    border-color var(--control-state-duration) var(--control-state-easing),
+    background-color var(--control-state-duration) var(--control-state-easing),
+    background var(--control-state-duration) var(--control-state-easing),
+    color var(--control-state-duration) var(--control-state-easing),
+    opacity var(--control-state-duration) var(--control-state-easing),
+    box-shadow var(--control-state-duration) var(--control-state-easing),
+    transform var(--control-state-duration) var(--control-state-easing);
 }
 
 button:active {
@@ -494,7 +507,8 @@ h2 {
   top: 8px;
   z-index: 40;
   max-width: calc(100% - 24px);
-  transform: translateX(-50%);
+  opacity: 0;
+  transform: translate(-50%, -4px) scale(var(--selection-state-enter-scale));
   border: 0;
   border-radius: 8px;
   background: rgba(8, 10, 12, 0.72);
@@ -505,6 +519,14 @@ h2 {
   line-height: 1;
   pointer-events: none;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  transition:
+    opacity var(--selection-state-duration) var(--selection-state-easing),
+    transform var(--selection-state-duration) var(--selection-state-easing);
+}
+
+.clue-label.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
 }
 
 .clue-label::before {
@@ -734,6 +756,7 @@ h2 {
   isolation: isolate;
   will-change: transform;
   touch-action: manipulation;
+  transition: box-shadow var(--selection-state-duration) var(--selection-state-easing);
 }
 
 .table-card.selected {
@@ -756,27 +779,51 @@ h2 {
   --card-selection-halo: var(--other-selection-halo);
 }
 
-.table-card.other-card-selected::before,
-.table-card.own-card-selected::after {
+.table-card::before,
+.table-card::after {
   content: "";
   position: absolute;
   pointer-events: none;
+  opacity: 0;
+  transform: scale(var(--selection-state-enter-scale));
+  transform-origin: center;
+  transition:
+    opacity var(--selection-state-duration) var(--selection-state-easing),
+    transform var(--selection-state-duration) var(--selection-state-easing),
+    border-color var(--selection-state-duration) var(--selection-state-easing);
 }
 
-.table-card.own-card-selected::after {
+.table-card::after {
   inset: -4px;
   z-index: 4;
-  border: 3px solid var(--own-selection-ring);
+  border: 3px solid var(--card-selection-ring, transparent);
   border-radius: 10px;
   box-shadow: none;
 }
 
-.table-card.other-card-selected::before {
+.table-card::before {
   inset: -9px;
   z-index: 3;
-  border: var(--other-selection-dot-width) dotted var(--other-selection-ring);
+  border: var(--other-selection-dot-width) dotted var(--card-selection-ring, transparent);
   border-radius: 15px;
   box-shadow: none;
+}
+
+.table-card.own-card-selected::after,
+.table-card.other-card-selected::before {
+  opacity: 1;
+  transform: scale(1);
+  animation: selection-ring-enter var(--selection-state-duration) var(--selection-state-easing) both;
+}
+
+.table-card.selection-exiting-own::after {
+  border-color: var(--own-selection-ring);
+  animation: selection-ring-exit var(--selection-state-duration) var(--selection-state-easing) both;
+}
+
+.table-card.selection-exiting-other::before {
+  border-color: var(--other-selection-ring);
+  animation: selection-ring-exit var(--selection-state-duration) var(--selection-state-easing) both;
 }
 
 .table-card.layout-animating {
@@ -921,6 +968,28 @@ h2 {
   }
 }
 
+@keyframes selection-ring-enter {
+  from {
+    opacity: 0;
+    transform: scale(var(--selection-state-enter-scale));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes selection-ring-exit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(var(--selection-state-enter-scale));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .table-card.new-card,
   .table-card.card-exiting {
@@ -940,6 +1009,17 @@ h2 {
 
   .firework-card-slot.last-result-highlight::after,
   .mini-card.last-result-highlight::after {
+    animation: none;
+  }
+
+  button,
+  .clue-label,
+  .clue-chooser,
+  .clue-chooser-panel,
+  .table-card,
+  .table-card::before,
+  .table-card::after {
+    transition: none;
     animation: none;
   }
 }
@@ -1177,6 +1257,18 @@ h2 {
   padding: 16px;
   padding-bottom: calc(env(safe-area-inset-bottom) + 16px);
   background: rgba(0, 0, 0, 0.42);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--selection-state-duration) var(--selection-state-easing);
+}
+
+.clue-chooser.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.clue-chooser.is-closing {
+  pointer-events: none;
 }
 
 .clue-chooser-panel {
@@ -1186,6 +1278,16 @@ h2 {
   background: rgba(15, 17, 20, 0.96);
   padding: 12px;
   box-shadow: 0 20px 54px rgba(0, 0, 0, 0.46);
+  opacity: 0;
+  transform: translateY(14px) scale(0.98);
+  transition:
+    opacity var(--selection-state-duration) var(--selection-state-easing),
+    transform var(--selection-state-duration) var(--selection-state-easing);
+}
+
+.clue-chooser.is-open .clue-chooser-panel {
+  opacity: 1;
+  transform: translateY(0) scale(1);
 }
 
 .clue-chooser h2 {

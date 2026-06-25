@@ -2,6 +2,9 @@ const HAND_SIZE = 5;
 const TURN_STATUS_DOUBLE_TAP_MS = 450;
 const SEAT_SWITCH_PROMPT_GUARD_MS = 600;
 const CARD_ASSET_FADE_MS = 160;
+const SELECTION_EXIT_MS = 220;
+const CLUE_LABEL_EXIT_MS = 180;
+const CLUE_CHOOSER_EXIT_MS = 180;
 const ACTION_MOVE_MS = 900;
 const ACTION_SETTLE_MS = 90;
 const DISCARD_CARD_WIDTH = 34;
@@ -25,6 +28,8 @@ const state = {
   mySeat: "A",
   selectedCards: { A: [], B: [] },
   peerSelectedCards: { A: [], B: [] },
+  selectionExitKinds: {},
+  selectionExitTimers: {},
   localLayouts: {},
   appliedClueSelectionKey: "",
   activeDrag: null,
@@ -32,6 +37,7 @@ const state = {
   pendingRoom: null,
   events: null,
   isOnline: false,
+  clueChooserHideTimer: null,
   seenCardIds: new Set(),
   hasRenderedRoom: false,
   lastAnimatedResultKey: "",
@@ -597,9 +603,7 @@ function renderHand(surface, player, options) {
     if (visualMode === "face") {
       element.classList.add(`color-${card.color}`);
     }
-    element.classList.toggle("selected", isSelected);
-    element.classList.toggle("own-card-selected", isOwnSelected);
-    element.classList.toggle("other-card-selected", isOtherSelected);
+    syncCardSelectionClasses(element, isOwnSelected, isOtherSelected);
     element.classList.toggle("layout-animating", canAnimateLayout);
     element.classList.toggle("draw-pending", isPendingDraw);
     element.dataset.seat = player.seat;
@@ -919,16 +923,24 @@ function fallbackLayout(index) {
 function selectCard(seat, cardId, options = {}) {
   if (seat === state.mySeat) {
     if (!canSelectOwnCards()) {
+      queueSelectionExit(selectedCardIds(seat), "own");
       state.selectedCards[seat] = [];
       updateSelectionClasses();
       return;
     }
     clearOpponentClueDraftIfNeeded();
   } else if (seat === opponentSeat()) {
+    queueSelectionExit(selectedCardIds(state.mySeat), "own");
     state.selectedCards[state.mySeat] = [];
   }
 
   const current = selectedCardIds(seat);
+  const selectionKind = seat === state.mySeat ? "own" : "other";
+  if (options.multi && current.includes(cardId)) {
+    queueSelectionExit([cardId], selectionKind);
+  } else if (!options.multi) {
+    queueSelectionExit(current.filter((id) => id !== cardId), selectionKind);
+  }
   const nextSelectedCards = options.multi
     ? current.includes(cardId)
       ? current.filter((id) => id !== cardId)
@@ -942,7 +954,12 @@ function selectCard(seat, cardId, options = {}) {
 
 function clearOpponentClueDraftIfNeeded() {
   const targetSeat = opponentSeat();
-  if (selectedCardIds(targetSeat).length === 0) return;
+  const targetIds = uniqueIds([
+    ...selectedCardIds(targetSeat),
+    ...peerSelectedCardIds(targetSeat)
+  ]);
+  if (targetIds.length === 0) return;
+  queueSelectionExit(targetIds, "other");
   state.selectedCards[targetSeat] = [];
   if (!canSelectOpponentCards()) return;
   action({
@@ -981,6 +998,7 @@ function isPendingDrawCard(seat, cardId) {
 function resetLocalSelections(options = {}) {
   state.selectedCards = { A: [], B: [] };
   state.peerSelectedCards = { A: [], B: [] };
+  clearSelectionExits();
   state.localLayouts = {};
   state.appliedClueSelectionKey = "";
   state.activeDrag = null;
@@ -1002,13 +1020,62 @@ function updateSelectionClasses() {
     const isOwnSelected = element.dataset.seat === state.mySeat && isLocallySelected && canSelectOwnCards();
     const isOtherSelected = (element.dataset.seat !== state.mySeat && isLocallySelected && canSelectOpponentCards()) || isPeerSelected;
     const isSelected = isOwnSelected || isOtherSelected;
-    element.classList.toggle("selected", isSelected);
-    element.classList.toggle("own-card-selected", isOwnSelected);
-    element.classList.toggle("other-card-selected", isOtherSelected);
+    syncCardSelectionClasses(element, isOwnSelected, isOtherSelected);
     const index = [...element.parentElement.children].indexOf(element);
     element.style.zIndex = String(10 + index + (isSelected ? 100 : 0));
   });
   updateActionButtons();
+}
+
+function syncCardSelectionClasses(element, isOwnSelected, isOtherSelected) {
+  const isSelected = isOwnSelected || isOtherSelected;
+  const exitKind = state.selectionExitKinds[element.dataset.cardId];
+
+  element.classList.toggle("selected", isSelected);
+  element.classList.toggle("own-card-selected", isOwnSelected);
+  element.classList.toggle("other-card-selected", isOtherSelected);
+  element.classList.toggle("selection-exiting-own", exitKind === "own" && !isOwnSelected);
+  element.classList.toggle("selection-exiting-other", exitKind === "other" && !isOtherSelected);
+
+  if (isOwnSelected) {
+    clearSelectionExit(element.dataset.cardId, "own");
+  }
+
+  if (isOtherSelected) {
+    clearSelectionExit(element.dataset.cardId, "other");
+  }
+}
+
+function queueSelectionExit(cardIds, kind) {
+  for (const cardId of cardIds) {
+    if (!cardId) continue;
+    state.selectionExitKinds[cardId] = kind;
+    if (state.selectionExitTimers[cardId]) {
+      window.clearTimeout(state.selectionExitTimers[cardId]);
+    }
+    state.selectionExitTimers[cardId] = window.setTimeout(() => {
+      if (state.selectionExitKinds[cardId] === kind) {
+        delete state.selectionExitKinds[cardId];
+      }
+      delete state.selectionExitTimers[cardId];
+      updateSelectionClasses();
+    }, SELECTION_EXIT_MS);
+  }
+}
+
+function clearSelectionExit(cardId, kind) {
+  if (!cardId || (kind && state.selectionExitKinds[cardId] !== kind)) return;
+  if (state.selectionExitTimers[cardId]) {
+    window.clearTimeout(state.selectionExitTimers[cardId]);
+    delete state.selectionExitTimers[cardId];
+  }
+  delete state.selectionExitKinds[cardId];
+}
+
+function clearSelectionExits() {
+  Object.values(state.selectionExitTimers).forEach((timer) => window.clearTimeout(timer));
+  state.selectionExitKinds = {};
+  state.selectionExitTimers = {};
 }
 
 function updateActionButtons() {
@@ -1178,9 +1245,11 @@ async function chooseClueCandidate(candidates) {
 }
 
 function showClueChooser(candidates) {
-  closeClueChooser(null);
+  closeClueChooserImmediately();
   return new Promise((resolve) => {
     state.clueChooserResolve = resolve;
+    window.clearTimeout(state.clueChooserHideTimer);
+    state.clueChooserHideTimer = null;
     clueChooserOptions.replaceChildren();
 
     for (const candidate of candidates) {
@@ -1192,19 +1261,48 @@ function showClueChooser(candidates) {
       clueChooserOptions.append(button);
     }
 
-    clueChooser.classList.remove("hidden");
-    clueChooserOptions.querySelector("button")?.focus();
+    clueChooser.classList.remove("hidden", "is-closing");
+    clueChooser.setAttribute("aria-hidden", "false");
+    requestAnimationFrame(() => {
+      clueChooser.classList.add("is-open");
+      clueChooserOptions.querySelector("button")?.focus();
+    });
   });
 }
 
 function closeClueChooser(result) {
+  closeClueChooserWithOptions(result);
+}
+
+function closeClueChooserImmediately() {
+  closeClueChooserWithOptions(null, { immediate: true });
+}
+
+function closeClueChooserWithOptions(result, options = {}) {
   if (!clueChooser) return;
-  clueChooser.classList.add("hidden");
-  clueChooserOptions.replaceChildren();
 
   const resolve = state.clueChooserResolve;
   state.clueChooserResolve = null;
   if (resolve) resolve(result);
+
+  window.clearTimeout(state.clueChooserHideTimer);
+  clueChooser.classList.remove("is-open");
+  clueChooser.classList.add("is-closing");
+  clueChooser.setAttribute("aria-hidden", "true");
+
+  const finish = () => {
+    clueChooser.classList.add("hidden");
+    clueChooser.classList.remove("is-closing");
+    clueChooserOptions.replaceChildren();
+    state.clueChooserHideTimer = null;
+  };
+
+  if (options.immediate) {
+    finish();
+    return;
+  }
+
+  state.clueChooserHideTimer = window.setTimeout(finish, CLUE_CHOOSER_EXIT_MS);
 }
 
 function clueSelectionError(targetSeat, selectedIds) {
@@ -1293,14 +1391,35 @@ function renderClueLabels() {
 }
 
 function renderSingleClueLabel(selfClueLabel, selection) {
+  selfClueLabel.hidden = false;
   if (!selection) {
-    selfClueLabel.hidden = true;
-    selfClueLabel.replaceChildren();
+    selfClueLabel.classList.remove("is-visible");
+    selfClueLabel.setAttribute("aria-hidden", "true");
+    queueClueLabelClear(selfClueLabel);
     return;
   }
 
+  if (selfClueLabel._clearTimer) {
+    window.clearTimeout(selfClueLabel._clearTimer);
+    selfClueLabel._clearTimer = null;
+  }
   selfClueLabel.textContent = selection.clue.label;
-  selfClueLabel.hidden = false;
+  selfClueLabel.setAttribute("aria-hidden", "false");
+  requestAnimationFrame(() => {
+    selfClueLabel.classList.add("is-visible");
+  });
+}
+
+function queueClueLabelClear(clueLabel) {
+  if (clueLabel._clearTimer) {
+    window.clearTimeout(clueLabel._clearTimer);
+  }
+  clueLabel._clearTimer = window.setTimeout(() => {
+    if (!clueLabel.classList.contains("is-visible")) {
+      clueLabel.replaceChildren();
+    }
+    clueLabel._clearTimer = null;
+  }, CLUE_LABEL_EXIT_MS);
 }
 
 function selectedCard(seat) {
@@ -1766,11 +1885,18 @@ function markSeenCards() {
 
 function clearMissingSelections() {
   if (!state.room) return;
+  const allValidIds = new Set();
   for (const player of state.room.players) {
     const validIds = new Set(player.hand.map((card) => card.id));
+    validIds.forEach((id) => allValidIds.add(id));
     state.selectedCards[player.seat] = selectedCardIds(player.seat).filter((id) => validIds.has(id));
     state.peerSelectedCards[player.seat] = peerSelectedCardIds(player.seat).filter((id) => validIds.has(id));
   }
+  Object.keys(state.selectionExitKinds).forEach((cardId) => {
+    if (!allValidIds.has(cardId)) {
+      clearSelectionExit(cardId);
+    }
+  });
   pruneLocalLayouts();
 }
 
@@ -1810,6 +1936,9 @@ function uniqueIds(ids) {
 }
 
 function clearPeerSelection() {
+  Object.values(state.peerSelectedCards).forEach((cardIds) => {
+    queueSelectionExit(cardIds, "other");
+  });
   state.peerSelectedCards = { A: [], B: [] };
   if (state.appliedClueSelectionKey) {
     state.appliedClueSelectionKey = "";
