@@ -908,8 +908,9 @@ function updateActionButtons() {
   if (!state.room) return;
   const isMyTurn = state.room.turnSeat === state.mySeat;
   const canAct = state.room.status !== "ended" && isMyTurn;
-  selfPlayButton.disabled = state.pendingAction || !canAct;
-  selfDiscardButton.disabled = state.pendingAction || !canAct;
+  const selectedActionCard = selectedCard(state.mySeat);
+  selfPlayButton.disabled = state.pendingAction || !canAct || !selectedActionCard;
+  selfDiscardButton.disabled = state.pendingAction || !canAct || !selectedActionCard;
   verbalClueButton.disabled = state.pendingAction || !canAct || state.room.hints <= 0 || !hasValidOpponentClueSelection();
 }
 

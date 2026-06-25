@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const vm = require("node:vm");
 
 function read(path) {
   return fs.readFileSync(path, "utf8");
@@ -18,6 +19,65 @@ function declarationValue(rule, property) {
   const match = rule.match(new RegExp(`${property}:\\s*([^;]+);`));
   assert.ok(match, `Missing ${property} in ${rule}`);
   return match[1];
+}
+
+function fakeElement() {
+  return {
+    checked: false,
+    disabled: false,
+    textContent: "",
+    classList: {
+      add() {},
+      remove() {},
+      contains() {
+        return true;
+      },
+      toggle() {}
+    },
+    addEventListener() {},
+    append() {},
+    replaceChildren() {},
+    setAttribute() {}
+  };
+}
+
+function loadClientForUiStateTest() {
+  const elements = new Map();
+  const document = {
+    querySelector(selector) {
+      if (!elements.has(selector)) {
+        elements.set(selector, fakeElement());
+      }
+      return elements.get(selector);
+    },
+    querySelectorAll() {
+      return [];
+    }
+  };
+  const sandbox = {
+    document,
+    window: {
+      addEventListener() {},
+      location: { hash: "", pathname: "/" },
+      history: { replaceState() {} }
+    },
+    localStorage: {
+      getItem() {
+        return null;
+      },
+      setItem() {}
+    },
+    URLSearchParams,
+    setTimeout,
+    clearTimeout,
+    console
+  };
+
+  vm.runInNewContext(
+    `${read("public/app.js")}\nglobalThis.__client = { state, updateActionButtons, selfPlayButton, selfDiscardButton };`,
+    sandbox
+  );
+  return sandbox.__client;
 }
 
 test("setup screen exposes game creation and join controls", () => {
@@ -209,6 +269,33 @@ test("client disables clue action when selected cards have no legal clue", () =>
   assert.match(script, /return selectedOpponentClueCandidates\(\)\.length > 0;/);
   assert.match(script, /verbalClueButton\.disabled = state\.pendingAction \|\| !canAct \|\| state\.room\.hints <= 0 \|\| !hasValidOpponentClueSelection\(\);/);
   assert.doesNotMatch(script, /autoClueButton/);
+});
+
+test("client disables local play and discard until a local card is selected", () => {
+  const client = loadClientForUiStateTest();
+  client.state.mySeat = "A";
+  client.state.pendingAction = false;
+  client.state.selectedCards = { A: [], B: [] };
+  client.state.room = {
+    status: "playing",
+    turnSeat: "A",
+    hints: 8,
+    players: [
+      { seat: "A", hand: [{ id: "a1" }] },
+      { seat: "B", hand: [{ id: "b1", color: "red", rank: 1 }] }
+    ]
+  };
+
+  client.updateActionButtons();
+
+  assert.equal(client.selfPlayButton.disabled, true);
+  assert.equal(client.selfDiscardButton.disabled, true);
+
+  client.state.selectedCards.A = ["a1"];
+  client.updateActionButtons();
+
+  assert.equal(client.selfPlayButton.disabled, false);
+  assert.equal(client.selfDiscardButton.disabled, false);
 });
 
 test("client shows ambiguous clue options in one chooser", () => {
