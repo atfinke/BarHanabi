@@ -1,6 +1,10 @@
 :root {
   color-scheme: dark;
   --bg: #0b0d0f;
+  --site-bg-top-left: #03020a;
+  --site-bg-top-right: #03030d;
+  --site-bg-bottom-left: #03030d;
+  --site-bg-bottom-right: #010105;
   --surface: rgba(255, 255, 255, 0.075);
   --surface-strong: rgba(255, 255, 255, 0.12);
   --surface-soft: rgba(255, 255, 255, 0.045);
@@ -83,9 +87,11 @@ html {
 body {
   margin: 0;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.055), transparent 34%),
-    linear-gradient(135deg, rgba(90, 200, 250, 0.12), transparent 28%),
-    var(--bg);
+    radial-gradient(circle at 0 0, var(--site-bg-top-left) 0, transparent 62%),
+    radial-gradient(circle at 100% 0, var(--site-bg-top-right) 0, transparent 62%),
+    radial-gradient(circle at 0 100%, var(--site-bg-bottom-left) 0, transparent 62%),
+    radial-gradient(circle at 100% 100%, var(--site-bg-bottom-right) 0, transparent 62%),
+    linear-gradient(135deg, var(--site-bg-top-left), var(--site-bg-bottom-right));
   color: var(--text);
   letter-spacing: 0;
   -webkit-font-smoothing: antialiased;

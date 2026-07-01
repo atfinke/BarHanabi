@@ -790,7 +790,9 @@ function serveStatic(request, response) {
       ".html": "text/html; charset=utf-8",
       ".css": "text/css; charset=utf-8",
       ".js": "application/javascript; charset=utf-8",
-      ".json": "application/json; charset=utf-8"
+      ".json": "application/json; charset=utf-8",
+      ".png": "image/png",
+      ".webmanifest": "application/manifest+json; charset=utf-8"
     }[extension] || "application/octet-stream";
 
     response.writeHead(200, {
