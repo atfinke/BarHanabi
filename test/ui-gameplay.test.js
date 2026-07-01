@@ -26,6 +26,8 @@ function fakeElement() {
     checked: false,
     disabled: false,
     dataset: {},
+    offsetWidth: 40,
+    offsetHeight: 64,
     textContent: "",
     classList: {
       add() {},
@@ -38,6 +40,12 @@ function fakeElement() {
     addEventListener() {},
     append() {},
     replaceChildren() {},
+    querySelectorAll() {
+      return [];
+    },
+    getBoundingClientRect() {
+      return { left: 0, top: 0, width: 100, height: 100 };
+    },
     setAttribute() {}
   };
 }
@@ -75,10 +83,21 @@ function loadClientForUiStateTest() {
   };
 
   vm.runInNewContext(
-    `${read("public/app.js")}\nglobalThis.__client = { state, updateActionButtons, updateRoomCodeLabel, roomCodeLabel, selfPlayButton, selfDiscardButton };`,
+    `${read("public/app.js")}\nglobalThis.__client = { state, applyRoomState, tableDisplayRoom, updateActionButtons, updateRoomCodeLabel, roomCodeLabel, selfPlayButton, selfDiscardButton, selfHand, opponentHand };`,
     sandbox
   );
   return sandbox.__client;
+}
+
+function visibleCardElement(cardId) {
+  return {
+    dataset: { cardId, layoutRotation: "0" },
+    offsetWidth: 40,
+    offsetHeight: 64,
+    getBoundingClientRect() {
+      return { left: 12, top: 24, width: 40, height: 64 };
+    }
+  };
 }
 
 test("setup screen exposes game creation and join controls", () => {
@@ -360,6 +379,58 @@ test("client disables local play and discard until a local card is selected", ()
 
   assert.equal(client.selfPlayButton.disabled, false);
   assert.equal(client.selfDiscardButton.disabled, false);
+});
+
+test("action result received during drag does not pin table display to previous room", () => {
+  const client = loadClientForUiStateTest();
+  const actedCard = { id: "played-card", color: "red", rank: 1, layout: { x: 40, y: 50, rotation: 0 } };
+  const previousRoom = {
+    code: "TEST",
+    version: 1,
+    deckCount: 40,
+    discard: [],
+    fireworks: { red: 0 },
+    hints: 8,
+    maxHints: 8,
+    bombs: 0,
+    maxBombs: 3,
+    colors: [{ id: "red", label: "Red" }],
+    lastResult: null,
+    turnSeat: "B",
+    status: "playing",
+    players: [
+      { seat: "A", hand: [{ id: "dragged-card", layout: { x: 50, y: 50, rotation: 0 } }] },
+      { seat: "B", hand: [actedCard] }
+    ]
+  };
+  const nextRoom = {
+    ...previousRoom,
+    version: 2,
+    discard: [actedCard],
+    lastResult: {
+      type: "discard",
+      action: "discard",
+      actorSeat: "B",
+      cardId: actedCard.id,
+      color: actedCard.color,
+      rank: actedCard.rank,
+      card: actedCard
+    },
+    players: [
+      previousRoom.players[0],
+      { seat: "B", hand: [] }
+    ]
+  };
+
+  client.state.room = previousRoom;
+  client.state.activeDrag = { seat: "A", cardId: "dragged-card" };
+  client.opponentHand.querySelectorAll = () => [visibleCardElement(actedCard.id)];
+
+  client.applyRoomState(nextRoom);
+
+  assert.equal(client.state.pendingRoom, nextRoom);
+  assert.equal(client.state.tableStateHold, null);
+  assert.equal(client.tableDisplayRoom(), nextRoom);
 });
 
 test("client shows ambiguous clue options in one chooser", () => {
