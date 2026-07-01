@@ -184,7 +184,10 @@ test("mobile UI exposes current controls and omits retired controls", () => {
     /id="selfDiscardButton"/,
     /id="clueButton"/,
     /id="rotationWheel"[\s\S]*aria-label="Rotate selected card"/,
+    /id="settingsButton"[\s\S]*aria-label="Settings"/,
+    /id="settingsPopover"[\s\S]*role="dialog"/,
     /id="autoCluePreviewToggle"/,
+    /id="manualRotationToggle"/,
     /id="selfClueLabel"/,
     /id="resetButton"/,
     /id="turnStatus"[\s\S]*Double tap to switch player/,
@@ -197,27 +200,19 @@ test("mobile UI exposes current controls and omits retired controls", () => {
   }
 
   const resetButtonBlocks = styles.match(/\.reset-button\s*\{[^}]*\}/g) || [];
-  assert.ok(resetButtonBlocks.length > 0);
+  assert.equal(resetButtonBlocks.length, 0);
   assert.match(html, /id="resetButton"[\s\S]*>Restart<\/button>/);
   assert.doesNotMatch(html, /id="resetButton"[^>]*danger-outline/);
 
-  const autoClueRule = cssRule(styles, ".auto-clue-toggle");
-  const resetButtonRule = cssRule(styles, ".reset-button");
+  const settingsActionButtonRule = cssRule(styles, ".settings-action-button");
+  const settingsToggleRule = cssRule(styles, ".settings-toggle");
   const mobileStyles = styles.slice(styles.indexOf("@media (max-width: 520px)"));
-  const mobileAutoClueRule = cssRule(mobileStyles, ".auto-clue-toggle");
-  const mobileResetButtonRule = cssRule(mobileStyles, ".reset-button");
+  const mobileSettingsButtonRule = cssRule(mobileStyles, ".settings-button");
 
-  for (const property of ["border", "background", "color"]) {
-    assert.equal(declarationValue(resetButtonRule, property), declarationValue(autoClueRule, property));
-  }
-
-  for (const property of ["font-size", "font-weight", "line-height", "text-transform"]) {
-    assert.equal(declarationValue(resetButtonRule, property), declarationValue(autoClueRule, property));
-    assert.equal(
-      declarationValue(mobileResetButtonRule, property),
-      declarationValue(mobileAutoClueRule, property)
-    );
-  }
+  assert.match(styles, /\.settings-button,\n\.settings-close-button \{[\s\S]*width: 40px;/);
+  assert.equal(declarationValue(mobileSettingsButtonRule, "width"), "38px");
+  assert.equal(declarationValue(settingsActionButtonRule, "width"), "100%");
+  assert.equal(declarationValue(settingsToggleRule, "justify-content"), "space-between");
 
   for (const retired of [
     /id="drawButton"|>Draw<\/button>/,
@@ -235,6 +230,38 @@ test("mobile UI exposes current controls and omits retired controls", () => {
   ]) {
     assert.doesNotMatch(html, retired);
   }
+});
+
+test("game settings live in a clue-style popover", () => {
+  const html = read("public/index.html");
+  const script = read("public/app.js");
+  const styles = read("public/styles.css");
+
+  assert.match(html, /id="settingsButton"[\s\S]*aria-controls="settingsPopover"[\s\S]*aria-expanded="false"/);
+  assert.match(html, /id="settingsPopover"[\s\S]*aria-hidden="true"/);
+  assert.match(html, /class="settings-popover-header"[\s\S]*id="settingsPopoverTitle">Settings<\/h2>/);
+  assert.match(html, /class="settings-controls"[\s\S]*id="resetButton"[\s\S]*Restart/);
+  assert.match(html, /for="autoCluePreviewToggle"[\s\S]*Auto Clue[\s\S]*id="autoCluePreviewToggle"/);
+  assert.match(html, /for="manualRotationToggle"[\s\S]*Manual Rotation[\s\S]*id="manualRotationToggle"/);
+  assert.doesNotMatch(html, /settingsPopover[\s\S]*(hintSetting|bombSetting|rainbowSetting)/);
+
+  for (const pattern of [
+    /const settingsButton = document\.querySelector\("#settingsButton"\);/,
+    /const settingsPopover = document\.querySelector\("#settingsPopover"\);/,
+    /settingsButton\.addEventListener\("click", \(\) => toggleSettingsPopover\(\)\);/,
+    /function openSettingsPopover\(\)/,
+    /function closeSettingsPopover\(\)/,
+    /settingsButton\.setAttribute\("aria-expanded", "true"\);/,
+    /settingsButton\.setAttribute\("aria-expanded", "false"\);/
+  ]) {
+    assert.match(script, pattern);
+  }
+
+  assert.match(styles, /\.clue-chooser,\n\.settings-popover \{/);
+  assert.match(styles, /\.clue-chooser-panel,\n\.settings-popover-panel \{/);
+  assert.match(html, /class="settings-icon"[\s\S]*viewBox="0 0 24 24"/);
+  assert.match(styles, /\.settings-icon \{/);
+  assert.match(styles, /\.settings-toggle \{/);
 });
 
 test("room code control copies the full room share link", () => {
@@ -294,12 +321,13 @@ test("room code chip hides the code only while the other player is connected", (
   assert.equal(client.roomCodeLabel.dataset.presence, "reconnecting");
 });
 
-test("auto clue checkbox cannot create mobile horizontal overflow", () => {
+test("settings toggles cannot create mobile horizontal overflow", () => {
   const styles = read("public/styles.css");
-  const toggleRule = cssRule(styles, ".auto-clue-toggle");
-  const inputRule = cssRule(styles, ".auto-clue-toggle input");
+  const toggleRule = cssRule(styles, ".settings-toggle");
+  const inputRule = cssRule(styles, ".settings-toggle input");
 
   assert.match(toggleRule, /position: relative;/);
+  assert.match(toggleRule, /justify-content: space-between;/);
   assert.match(inputRule, /position: absolute;/);
   assert.match(inputRule, /inset: 0;/);
   assert.match(inputRule, /width: 100%;/);
@@ -546,7 +574,7 @@ test("client shows ambiguous clue options in one chooser", () => {
   ]) {
     assert.match(script, pattern);
   }
-  assert.match(styles, /\.clue-chooser \{/);
+  assert.match(styles, /\.clue-chooser,\n\.settings-popover \{/);
   assert.match(styles, /\.clue-chooser-options \{/);
 });
 
@@ -634,11 +662,13 @@ test("card interactions move with one pointer and rotate with wheel or option-dr
     /function bindCardPointer/,
     /const rotationWheel = document\.querySelector\("#rotationWheel"\);/,
     /rotationWheel\.addEventListener\("pointerdown", handleRotationWheelPointerDown\);/,
+    /function manualRotationEnabled\(\) \{[\s\S]*return manualRotationToggle\.checked;/,
     /function renderRotationWheel\(\)/,
     /function handleRotationWheelPointerDown\(event\)/,
     /function selectedOwnLayoutTargets\(\)/,
     /function applyCardLayoutUpdate\(surface, card, layout/,
-    /rotationWheel\.classList\.toggle\("hidden", !canShow\);/,
+    /const canShow = manualRotationEnabled\(\) && targets\.length > 0 && canSelectOwnCards\(\);/,
+    /if \(!manualRotationEnabled\(\) \|\| targets\.length === 0 \|\| !canSelectOwnCards\(\)\) return;/,
     /const joiningGesture = gesture && state\.activeDrag\?\.seat === player\.seat && state\.activeDrag\?\.cardId === card\.id;/,
     /pointers: new Map\(\[\[event\.pointerId, pointerSnapshot\(event\)\]\]\)/,
     /function pointerSnapshot\(event\)/,
@@ -648,8 +678,8 @@ test("card interactions move with one pointer and rotate with wheel or option-dr
     /function pointerAngle\(first, second\)/,
     /function angleDelta\(current, start\)/,
     /rotation: gesture\.layout\.rotation/,
-    /if \(event\.altKey && gesture\.pointers\.size === 1\)/,
-    /if \(moveEvent\.altKey\)/,
+    /if \(manualRotationEnabled\(\) && event\.altKey && gesture\.pointers\.size === 1\)/,
+    /if \(manualRotationEnabled\(\) && moveEvent\.altKey\)/,
     /pointerAngle\(gesture\.optionRotationStart\.center, pointers\[0\]\)/,
     /rotation: gesture\.optionRotationStart\.layout\.rotation \+ delta/,
     /const delta = angleDelta\(pointerAngle\(gesture\.center, pointer\), gesture\.startAngle\);/,

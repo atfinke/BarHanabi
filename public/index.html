@@ -75,14 +75,20 @@
             title="Double tap to switch player"
           >Their Turn</strong>
           <div class="top-actions">
-            <label class="auto-clue-toggle" for="autoCluePreviewToggle" title="Auto-send a clue when there is only one valid option">
-              <input id="autoCluePreviewToggle" type="checkbox" aria-label="Auto clue">
-              <span class="auto-clue-track" aria-hidden="true">
-                <span class="auto-clue-thumb"></span>
-              </span>
-              <span class="auto-clue-text">Auto Clue</span>
-            </label>
-            <button class="reset-button" type="button" id="resetButton">Restart</button>
+            <button
+              class="settings-button"
+              type="button"
+              id="settingsButton"
+              aria-label="Settings"
+              aria-controls="settingsPopover"
+              aria-expanded="false"
+              title="Settings"
+            >
+              <svg class="settings-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"></path>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.18.6.74 1 1.36 1H21a2 2 0 1 1 0 4h-.24a1.65 1.65 0 0 0-1.36 1Z"></path>
+              </svg>
+            </button>
           </div>
         </header>
 
@@ -144,6 +150,32 @@
           <h2 id="clueChooserTitle">Choose clue</h2>
           <div class="clue-chooser-options" id="clueChooserOptions"></div>
           <button class="clue-chooser-cancel" type="button" id="clueChooserCancel">Cancel</button>
+        </div>
+      </div>
+
+      <div class="settings-popover hidden" id="settingsPopover" role="dialog" aria-modal="true" aria-labelledby="settingsPopoverTitle" aria-hidden="true">
+        <div class="settings-popover-panel">
+          <div class="settings-popover-header">
+            <h2 id="settingsPopoverTitle">Settings</h2>
+            <button class="settings-close-button" type="button" id="settingsCloseButton" aria-label="Close settings" title="Close settings"></button>
+          </div>
+          <div class="settings-controls">
+            <button class="settings-action-button" type="button" id="resetButton">Restart</button>
+            <label class="settings-toggle" for="autoCluePreviewToggle" title="Auto-send a clue when there is only one valid option">
+              <span>Auto Clue</span>
+              <input id="autoCluePreviewToggle" type="checkbox" aria-label="Auto clue">
+              <span class="settings-toggle-track" aria-hidden="true">
+                <span class="settings-toggle-thumb"></span>
+              </span>
+            </label>
+            <label class="settings-toggle" for="manualRotationToggle">
+              <span>Manual Rotation</span>
+              <input id="manualRotationToggle" type="checkbox" aria-label="Manual rotation">
+              <span class="settings-toggle-track" aria-hidden="true">
+                <span class="settings-toggle-thumb"></span>
+              </span>
+            </label>
+          </div>
         </div>
       </div>
 
