@@ -86,13 +86,15 @@ function createRoomCode() {
   return code;
 }
 
-function makeRoom(code = createRoomCode(), rawSettings = {}) {
+function makeRoom(code = createRoomCode(), rawSettings = {}, options = {}) {
   const settings = sanitizeRoomSettings(rawSettings);
   const colors = colorsForSettings(settings);
+  const startingSeat = normalizeStartingSeat(options.startingSeat);
   const room = {
     code,
     settings,
     colors,
+    startingSeat,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     version: 1,
@@ -109,7 +111,7 @@ function makeRoom(code = createRoomCode(), rawSettings = {}) {
     finalTurnsRemaining: null,
     finalRoundStartedBy: null,
     endedAt: null,
-    turnSeat: "A",
+    turnSeat: startingSeat,
     players: [
       { seat: "A", name: "Player A", hand: [] },
       { seat: "B", name: "Player B", hand: [] }
@@ -272,6 +274,10 @@ function getPlayer(room, seat) {
 
 function nextSeat(seat) {
   return seat === "A" ? "B" : "A";
+}
+
+function normalizeStartingSeat(seat) {
+  return normalizeSeat(seat) === "B" ? "B" : "A";
 }
 
 function assertPlayerTurn(room, player) {
@@ -545,7 +551,9 @@ function handleAction(room, action) {
   }
 
   if (type === "reset") {
-    const fresh = makeRoom(room.code, room.settings);
+    const fresh = makeRoom(room.code, room.settings, {
+      startingSeat: nextSeat(normalizeStartingSeat(room.startingSeat))
+    });
     rooms.set(room.code, fresh);
     broadcast(room.code);
     return fresh;
