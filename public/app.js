@@ -973,12 +973,14 @@ function bindCardPointer(element, surface, player, card, options) {
 
 function renderRotationWheel() {
   const targets = selectedOwnLayoutTargets();
-  const canShow = manualRotationEnabled() && targets.length > 0 && canArrangeOwnCards();
+  const canShow = manualRotationEnabled() && canArrangeOwnCards();
   rotationWheel.classList.toggle("hidden", !canShow);
   rotationWheel.setAttribute("aria-hidden", canShow ? "false" : "true");
   if (!canShow) return;
 
-  const layout = normalizeLayout(state.localLayouts[targets[0].card.id] || targets[0].card.layout);
+  const layout = targets.length > 0
+    ? normalizeLayout(state.localLayouts[targets[0].card.id] || targets[0].card.layout)
+    : normalizeLayout({ x: 50, y: 54, rotation: 0 });
   setRotationWheelAngle(layout.rotation);
 }
 

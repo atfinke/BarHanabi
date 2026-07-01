@@ -667,7 +667,7 @@ test("card interactions move with one pointer and rotate with wheel or option-dr
     /function handleRotationWheelPointerDown\(event\)/,
     /function selectedOwnLayoutTargets\(\)/,
     /function applyCardLayoutUpdate\(surface, card, layout/,
-    /const canShow = manualRotationEnabled\(\) && targets\.length > 0 && canArrangeOwnCards\(\);/,
+    /const canShow = manualRotationEnabled\(\) && canArrangeOwnCards\(\);/,
     /if \(!manualRotationEnabled\(\) \|\| targets\.length === 0 \|\| !canArrangeOwnCards\(\)\) return;/,
     /const joiningGesture = gesture && state\.activeDrag\?\.seat === player\.seat && state\.activeDrag\?\.cardId === card\.id;/,
     /pointers: new Map\(\[\[event\.pointerId, pointerSnapshot\(event\)\]\]\)/,
@@ -703,6 +703,7 @@ test("card interactions move with one pointer and rotate with wheel or option-dr
   assert.match(styles, /\.rotation-wheel \{[\s\S]*touch-action: none;/);
   assert.match(styles, /\.rotation-wheel-track \{/);
   assert.match(styles, /\.rotation-wheel-knob \{/);
+  assert.match(cssRule(styles, ".rotation-wheel-track"), /rgba\(16, 38, 76, 0\.9\)/);
   assert.match(styles, /\.self-hand \{[\s\S]*touch-action: none;/);
   assert.doesNotMatch(script, /rotateSelected|rotateLeftButton|rotateRightButton/);
   assert.doesNotMatch(script, /rotation: autoRotationForX\(x\)/);
@@ -719,7 +720,8 @@ test("manual rotation mode does not disable auto rotation or off-turn arrangemen
   assert.match(script, /function canArrangeOwnCards\(\) \{[\s\S]*return state\.room && state\.room\.status !== "ended";/);
   assert.match(script, /if \(!canArrangeOwnCards\(\)\) \{/);
   assert.match(script, /const isOwnSelected = player\.seat === state\.mySeat && isLocallySelected && canArrangeOwnCards\(\);/);
-  assert.match(script, /const canShow = manualRotationEnabled\(\) && targets\.length > 0 && canArrangeOwnCards\(\);/);
+  assert.match(script, /const canShow = manualRotationEnabled\(\) && canArrangeOwnCards\(\);/);
+  assert.match(script, /const layout = targets\.length > 0[\s\S]*\? normalizeLayout\(state\.localLayouts\[targets\[0\]\.card\.id\] \|\| targets\[0\]\.card\.layout\)[\s\S]*: normalizeLayout\(\{ x: 50, y: 54, rotation: 0 \}\);/);
   assert.match(script, /if \(!manualRotationEnabled\(\) \|\| targets\.length === 0 \|\| !canArrangeOwnCards\(\)\) return;/);
   assert.match(script, /function canSelectOwnCards\(\) \{[\s\S]*return canArrangeOwnCards\(\) && state\.room\.turnSeat === state\.mySeat;/);
 });
