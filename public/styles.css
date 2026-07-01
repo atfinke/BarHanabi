@@ -1192,6 +1192,16 @@ h2 {
   pointer-events: none;
 }
 
+.rotation-wheel-spoke,
+.rotation-wheel-knob {
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.rotation-wheel.is-rotating .rotation-wheel-spoke,
+.rotation-wheel.is-rotating .rotation-wheel-knob {
+  transition-duration: 0ms;
+}
+
 .danger-outline {
   border-color: rgba(232, 93, 117, 0.5);
   color: #ffb9c4;

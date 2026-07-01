@@ -1009,6 +1009,7 @@ function handleRotationWheelPointerDown(event) {
   };
   gesture.latestTargets = gesture.targets.map(({ card, layout }) => ({ card, layout }));
   state.activeDrag = { seat: state.mySeat, cardId: "rotation-wheel" };
+  rotationWheel.classList.add("is-rotating");
 
   function sendRotation(force) {
     const now = Date.now();
@@ -1047,6 +1048,7 @@ function handleRotationWheelPointerDown(event) {
     rotationWheel.removeEventListener("pointerup", onPointerUp);
     rotationWheel.removeEventListener("pointercancel", onPointerCancel);
     releaseCardPointer(rotationWheel, gesture.pointerId);
+    rotationWheel.classList.remove("is-rotating");
     state.activeDrag = null;
 
     if (!shouldCommit) {

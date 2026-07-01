@@ -686,6 +686,8 @@ test("card interactions move with one pointer and rotate with wheel or option-dr
     /rotation: gesture\.optionRotationStart\.layout\.rotation \+ delta/,
     /const delta = angleDelta\(pointerAngle\(gesture\.center, pointer\), gesture\.startAngle\);/,
     /rotation: layout\.rotation \+ delta/,
+    /rotationWheel\.classList\.add\("is-rotating"\);/,
+    /rotationWheel\.classList\.remove\("is-rotating"\);/,
     /setRotationWheelAngle\(gesture\.latestTargets\[0\]\.layout\.rotation\);/,
     /x: surfaceRect\.left \+ \(surfaceRect\.width \* layout\.x\) \/ 100/,
     /y: surfaceRect\.top \+ \(surfaceRect\.height \* layout\.y\) \/ 100/,
@@ -703,6 +705,8 @@ test("card interactions move with one pointer and rotate with wheel or option-dr
   assert.match(styles, /\.rotation-wheel \{[\s\S]*touch-action: none;/);
   assert.match(styles, /\.rotation-wheel-track \{/);
   assert.match(styles, /\.rotation-wheel-knob \{/);
+  assert.match(styles, /\.rotation-wheel-spoke,\n\.rotation-wheel-knob \{[\s\S]*transition: transform 180ms/);
+  assert.match(styles, /\.rotation-wheel\.is-rotating \.rotation-wheel-spoke,\n\.rotation-wheel\.is-rotating \.rotation-wheel-knob \{[\s\S]*transition-duration: 0ms;/);
   assert.match(cssRule(styles, ".rotation-wheel-track"), /rgba\(16, 38, 76, 0\.9\)/);
   assert.match(styles, /\.self-hand \{[\s\S]*touch-action: none;/);
   assert.doesNotMatch(script, /rotateSelected|rotateLeftButton|rotateRightButton/);
