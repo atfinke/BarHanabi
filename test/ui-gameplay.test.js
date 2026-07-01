@@ -667,10 +667,12 @@ test("card interactions move with one pointer and rotate with wheel or option-dr
     /function handleRotationWheelPointerDown\(event\)/,
     /function selectedOwnLayoutTargets\(\)/,
     /function applyCardLayoutUpdate\(surface, card, layout/,
-    /const canShow = manualRotationEnabled\(\) && targets\.length > 0 && canSelectOwnCards\(\);/,
-    /if \(!manualRotationEnabled\(\) \|\| targets\.length === 0 \|\| !canSelectOwnCards\(\)\) return;/,
+    /const canShow = manualRotationEnabled\(\) && targets\.length > 0 && canArrangeOwnCards\(\);/,
+    /if \(!manualRotationEnabled\(\) \|\| targets\.length === 0 \|\| !canArrangeOwnCards\(\)\) return;/,
     /const joiningGesture = gesture && state\.activeDrag\?\.seat === player\.seat && state\.activeDrag\?\.cardId === card\.id;/,
     /pointers: new Map\(\[\[event\.pointerId, pointerSnapshot\(event\)\]\]\)/,
+    /function normalizeDragLayout\(layout\) \{[\s\S]*manualRotationEnabled\(\)[\s\S]*autoRotationForX\(next\.x\)/,
+    /gesture\.latestLayout = normalizeDragLayout\(layout\);/,
     /function pointerSnapshot\(event\)/,
     /function optionRotationStartFor\(pointer, layout, surfaceRect\)/,
     /function cardCenterForLayout\(layout, surfaceRect\)/,
@@ -706,6 +708,20 @@ test("card interactions move with one pointer and rotate with wheel or option-dr
   assert.doesNotMatch(script, /rotation: autoRotationForX\(x\)/);
   assert.doesNotMatch(script, /gesture\.rotationStart|pointers\.length >= 2/);
   assert.doesNotMatch(script, /gesturestart|gesturechange|gestureend|gesturecancel|GestureEvent|event\.rotation/);
+});
+
+test("manual rotation mode does not disable auto rotation or off-turn arrangement", () => {
+  const script = read("public/app.js");
+
+  assert.match(script, /manualRotationToggle\.addEventListener\("change", \(\) => renderRotationWheel\(\)\);/);
+  assert.match(script, /function normalizeDragLayout\(layout\) \{[\s\S]*const next = normalizeLayout\(layout\);[\s\S]*return manualRotationEnabled\(\)[\s\S]*\? next[\s\S]*: normalizeLayout\(\{ \.\.\.next, rotation: autoRotationForX\(next\.x\) \}\);/);
+  assert.match(script, /gesture\.latestLayout = normalizeDragLayout\(layout\);/);
+  assert.match(script, /function canArrangeOwnCards\(\) \{[\s\S]*return state\.room && state\.room\.status !== "ended";/);
+  assert.match(script, /if \(!canArrangeOwnCards\(\)\) \{/);
+  assert.match(script, /const isOwnSelected = player\.seat === state\.mySeat && isLocallySelected && canArrangeOwnCards\(\);/);
+  assert.match(script, /const canShow = manualRotationEnabled\(\) && targets\.length > 0 && canArrangeOwnCards\(\);/);
+  assert.match(script, /if \(!manualRotationEnabled\(\) \|\| targets\.length === 0 \|\| !canArrangeOwnCards\(\)\) return;/);
+  assert.match(script, /function canSelectOwnCards\(\) \{[\s\S]*return canArrangeOwnCards\(\) && state\.room\.turnSeat === state\.mySeat;/);
 });
 
 test("client displays official endgame state and blocks ended gameplay", () => {

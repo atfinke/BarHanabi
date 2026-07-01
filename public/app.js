@@ -679,7 +679,7 @@ function renderHand(surface, player, options) {
     const visualMode = cardHasDetails(card) && !options.concealed ? "face" : "back";
     const isLocallySelected = selectedCardIds(player.seat).includes(card.id);
     const isPeerSelected = peerSelectedCardIds(player.seat).includes(card.id);
-    const isOwnSelected = player.seat === state.mySeat && isLocallySelected && canSelectOwnCards();
+    const isOwnSelected = player.seat === state.mySeat && isLocallySelected && canArrangeOwnCards();
     const isOtherSelected = (player.seat !== state.mySeat && isLocallySelected && canSelectOpponentCards()) || isPeerSelected;
     const isSelected = isOwnSelected || isOtherSelected;
     const isPendingDraw = isPendingDrawCard(player.seat, card.id);
@@ -922,7 +922,7 @@ function bindCardPointer(element, surface, player, card, options) {
 
   function updateGestureLayout(layout) {
     if (!gesture) return;
-    gesture.latestLayout = normalizeLayout(layout);
+    gesture.latestLayout = normalizeDragLayout(layout);
     gesture.moved = true;
     applyCardLayoutUpdate(surface, card, gesture.latestLayout, gesture.surfaceSize);
     sendMove(false);
@@ -973,7 +973,7 @@ function bindCardPointer(element, surface, player, card, options) {
 
 function renderRotationWheel() {
   const targets = selectedOwnLayoutTargets();
-  const canShow = manualRotationEnabled() && targets.length > 0 && canSelectOwnCards();
+  const canShow = manualRotationEnabled() && targets.length > 0 && canArrangeOwnCards();
   rotationWheel.classList.toggle("hidden", !canShow);
   rotationWheel.setAttribute("aria-hidden", canShow ? "false" : "true");
   if (!canShow) return;
@@ -984,7 +984,7 @@ function renderRotationWheel() {
 
 function handleRotationWheelPointerDown(event) {
   const targets = selectedOwnLayoutTargets();
-  if (!manualRotationEnabled() || targets.length === 0 || !canSelectOwnCards()) return;
+  if (!manualRotationEnabled() || targets.length === 0 || !canArrangeOwnCards()) return;
 
   event.preventDefault();
   rotationWheel.setPointerCapture(event.pointerId);
@@ -1087,6 +1087,13 @@ function handleRotationWheelPointerDown(event) {
 
 function manualRotationEnabled() {
   return manualRotationToggle.checked;
+}
+
+function normalizeDragLayout(layout) {
+  const next = normalizeLayout(layout);
+  return manualRotationEnabled()
+    ? next
+    : normalizeLayout({ ...next, rotation: autoRotationForX(next.x) });
 }
 
 function selectedOwnLayoutTargets() {
@@ -1278,7 +1285,7 @@ function fallbackLayout(index) {
 
 function selectCard(seat, cardId, options = {}) {
   if (seat === state.mySeat) {
-    if (!canSelectOwnCards()) {
+    if (!canArrangeOwnCards()) {
       queueSelectionExit(selectedCardIds(seat), "own");
       state.selectedCards[seat] = [];
       updateSelectionClasses();
@@ -1373,7 +1380,7 @@ function updateSelectionClasses() {
   document.querySelectorAll(".table-card").forEach((element) => {
     const isLocallySelected = selectedCardIds(element.dataset.seat).includes(element.dataset.cardId);
     const isPeerSelected = peerSelectedCardIds(element.dataset.seat).includes(element.dataset.cardId);
-    const isOwnSelected = element.dataset.seat === state.mySeat && isLocallySelected && canSelectOwnCards();
+    const isOwnSelected = element.dataset.seat === state.mySeat && isLocallySelected && canArrangeOwnCards();
     const isOtherSelected = (element.dataset.seat !== state.mySeat && isLocallySelected && canSelectOpponentCards()) || isPeerSelected;
     const isSelected = isOwnSelected || isOtherSelected;
     syncCardSelectionClasses(element, isOwnSelected, isOtherSelected);
@@ -2334,8 +2341,12 @@ function canSelectOpponentCards() {
   return state.room && state.room.status !== "ended" && state.room.turnSeat === state.mySeat && state.room.hints > 0;
 }
 
+function canArrangeOwnCards() {
+  return state.room && state.room.status !== "ended";
+}
+
 function canSelectOwnCards() {
-  return state.room && state.room.status !== "ended" && state.room.turnSeat === state.mySeat;
+  return canArrangeOwnCards() && state.room.turnSeat === state.mySeat;
 }
 
 function renderDiscard(room) {
