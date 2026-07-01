@@ -15,6 +15,16 @@ const MISPLAY_FIRST_LEG_MS = 760;
 const MISPLAY_DEFLECT_AT_MS = 600;
 const MISPLAY_SECOND_LEG_MS = 680;
 const MISPLAY_ARC_LIFT_PX = 88;
+const PLAYER_PREFERENCES_STORAGE_KEY = "barHanabiPreferences:v1";
+const VALID_HINT_PREFERENCES = [1, 2, 3, 4, 5, 6, 7, 8];
+const VALID_BOMB_PREFERENCES = [0, 1, 2, 3];
+const DEFAULT_PLAYER_PREFERENCES = Object.freeze({
+  hints: 8,
+  bombs: 3,
+  rainbow: true,
+  autoClue: false,
+  manualRotation: false
+});
 const COLORS = [
   { id: "red", label: "Red" },
   { id: "yellow", label: "Yellow" },
@@ -125,7 +135,14 @@ selfPlayButton.addEventListener("click", () => actionSelected(state.mySeat, "pla
 selfDiscardButton.addEventListener("click", () => actionSelected(state.mySeat, "discard"));
 clueButton.addEventListener("click", () => giveClue());
 rotationWheel.addEventListener("pointerdown", handleRotationWheelPointerDown);
-manualRotationToggle.addEventListener("change", handleManualRotationToggle);
+hintSetting.addEventListener("change", savePlayerPreferences);
+bombSetting.addEventListener("change", savePlayerPreferences);
+rainbowSetting.addEventListener("change", savePlayerPreferences);
+autoClueToggle.addEventListener("change", savePlayerPreferences);
+manualRotationToggle.addEventListener("change", () => {
+  savePlayerPreferences();
+  handleManualRotationToggle();
+});
 settingsButton.addEventListener("click", () => toggleSettingsPopover());
 settingsCloseButton.addEventListener("click", () => closeSettingsPopover());
 settingsPopover.addEventListener("click", (event) => {
@@ -174,6 +191,7 @@ window.addEventListener("pageshow", () => {
   reconnectCurrentRoom();
 });
 
+applyPlayerPreferences(loadPlayerPreferences());
 installDebugActions();
 
 const initialRoom = readHashRoom();
@@ -192,6 +210,64 @@ function readSetupSettings() {
     bombs: Number(bombSetting.value),
     rainbow: rainbowSetting.checked
   };
+}
+
+function loadPlayerPreferences() {
+  const rawPreferences = storageGetItem(PLAYER_PREFERENCES_STORAGE_KEY);
+  if (!rawPreferences) {
+    return DEFAULT_PLAYER_PREFERENCES;
+  }
+
+  try {
+    return normalizePlayerPreferences(JSON.parse(rawPreferences));
+  } catch {
+    return DEFAULT_PLAYER_PREFERENCES;
+  }
+}
+
+function applyPlayerPreferences(preferences) {
+  const normalized = normalizePlayerPreferences(preferences);
+  hintSetting.value = String(normalized.hints);
+  bombSetting.value = String(normalized.bombs);
+  rainbowSetting.checked = normalized.rainbow;
+  autoClueToggle.checked = normalized.autoClue;
+  manualRotationToggle.checked = normalized.manualRotation;
+}
+
+function savePlayerPreferences() {
+  storageSetItem(PLAYER_PREFERENCES_STORAGE_KEY, JSON.stringify(readPlayerPreferences()));
+}
+
+function readPlayerPreferences() {
+  return normalizePlayerPreferences({
+    ...readSetupSettings(),
+    autoClue: autoClueToggle.checked,
+    manualRotation: manualRotationToggle.checked
+  });
+}
+
+function normalizePlayerPreferences(preferences = {}) {
+  const source = preferences && typeof preferences === "object" ? preferences : {};
+  return {
+    hints: normalizePreferenceOption(source.hints, VALID_HINT_PREFERENCES, DEFAULT_PLAYER_PREFERENCES.hints),
+    bombs: normalizePreferenceOption(source.bombs, VALID_BOMB_PREFERENCES, DEFAULT_PLAYER_PREFERENCES.bombs),
+    rainbow: normalizeBooleanPreference(source.rainbow, DEFAULT_PLAYER_PREFERENCES.rainbow),
+    autoClue: normalizeBooleanPreference(source.autoClue, DEFAULT_PLAYER_PREFERENCES.autoClue),
+    manualRotation: normalizeBooleanPreference(source.manualRotation, DEFAULT_PLAYER_PREFERENCES.manualRotation)
+  };
+}
+
+function normalizePreferenceOption(value, validValues, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+  const normalized = Math.trunc(number);
+  return validValues.includes(normalized) ? normalized : fallback;
+}
+
+function normalizeBooleanPreference(value, fallback) {
+  return typeof value === "boolean" ? value : fallback;
 }
 
 async function enterRoom(code, options = {}) {
@@ -239,11 +315,25 @@ function roomSeatKey(code) {
 }
 
 function seatForRoom(code, fallbackSeat) {
-  return normalizeSeatOption(localStorage.getItem(roomSeatKey(code)), fallbackSeat);
+  return normalizeSeatOption(storageGetItem(roomSeatKey(code)), fallbackSeat);
 }
 
 function rememberSeatForRoom(code, seat) {
-  localStorage.setItem(roomSeatKey(code), normalizeSeatOption(seat, "A"));
+  storageSetItem(roomSeatKey(code), normalizeSeatOption(seat, "A"));
+}
+
+function storageGetItem(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function storageSetItem(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
 }
 
 function normalizeSeatOption(seat, fallbackSeat) {
@@ -322,7 +412,7 @@ function switchSeat(nextSeat) {
   if (normalizedSeat === state.mySeat) return;
   state.mySeat = normalizedSeat;
   resetLocalSelections();
-  localStorage.setItem("barHanabiSeat", state.mySeat);
+  storageSetItem("barHanabiSeat", state.mySeat);
   if (state.room) {
     rememberSeatForRoom(state.room.code, state.mySeat);
     connectEvents(state.room.code);
