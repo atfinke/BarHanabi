@@ -25,6 +25,8 @@ to deploy.
   before patching, keep edits narrow, and never overwrite unrelated local work.
 - Treat end-game changes as user-owned unless explicitly asked to work on them.
 - If changing gameplay actions, update or add a focused `node:test` test.
+- Keep tests focused on real behavior. Avoid needless, overcomplicated, or
+  brittle source-shape tests unless behavior cannot be exercised directly.
 - Before deploying, run `node --check server.js`, `node --check public/app.js`,
   and relevant `node --test` tests unless explicitly skipped.
 
