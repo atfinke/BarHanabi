@@ -394,33 +394,59 @@ function toggleSettingsPopover() {
   }
 }
 
-function openSettingsPopover() {
-  window.clearTimeout(state.settingsPopoverHideTimer);
-  state.settingsPopoverHideTimer = null;
-  settingsPopover.classList.remove("hidden", "is-closing");
-  settingsPopover.setAttribute("aria-hidden", "false");
-  settingsButton.setAttribute("aria-expanded", "true");
+function prefersReducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function openPopover({ element, trigger, timerKey, onOpen }) {
+  window.clearTimeout(state[timerKey]);
+  state[timerKey] = null;
+  element.classList.remove("hidden", "is-closing");
+  element.setAttribute("aria-hidden", "false");
+  trigger?.setAttribute("aria-expanded", "true");
   requestAnimationFrame(() => {
-    settingsPopover.classList.add("is-open");
-    settingsPopover.querySelector("button, input")?.focus();
+    element.classList.add("is-open");
+    onOpen?.();
+  });
+}
+
+function closePopover({ element, trigger, timerKey, immediate = false, onFinish }) {
+  if (!element || element.classList.contains("hidden")) return;
+  window.clearTimeout(state[timerKey]);
+  element.classList.remove("is-open");
+  element.classList.add("is-closing");
+  element.setAttribute("aria-hidden", "true");
+  trigger?.setAttribute("aria-expanded", "false");
+
+  const finish = () => {
+    element.classList.add("hidden");
+    element.classList.remove("is-closing");
+    state[timerKey] = null;
+    onFinish?.();
+  };
+
+  if (immediate || prefersReducedMotion()) {
+    finish();
+    return;
+  }
+  state[timerKey] = window.setTimeout(finish, CLUE_CHOOSER_EXIT_MS);
+}
+
+function openSettingsPopover() {
+  openPopover({
+    element: settingsPopover,
+    trigger: settingsButton,
+    timerKey: "settingsPopoverHideTimer",
+    onOpen: () => settingsPopover.querySelector("button, input")?.focus()
   });
 }
 
 function closeSettingsPopover() {
-  if (!settingsPopover || settingsPopover.classList.contains("hidden")) return;
-  window.clearTimeout(state.settingsPopoverHideTimer);
-  settingsPopover.classList.remove("is-open");
-  settingsPopover.classList.add("is-closing");
-  settingsPopover.setAttribute("aria-hidden", "true");
-  settingsButton.setAttribute("aria-expanded", "false");
-
-  const finish = () => {
-    settingsPopover.classList.add("hidden");
-    settingsPopover.classList.remove("is-closing");
-    state.settingsPopoverHideTimer = null;
-  };
-
-  state.settingsPopoverHideTimer = window.setTimeout(finish, CLUE_CHOOSER_EXIT_MS);
+  closePopover({
+    element: settingsPopover,
+    trigger: settingsButton,
+    timerKey: "settingsPopoverHideTimer"
+  });
 }
 
 function updateDeckRevealState(room) {
@@ -441,36 +467,21 @@ function updateDeckRevealState(room) {
 
 function openDeckReveal() {
   if (deckTile.disabled || !Array.isArray(state.room?.remainingDeck)) return;
-  window.clearTimeout(state.deckRevealHideTimer);
-  state.deckRevealHideTimer = null;
-  deckReveal.classList.remove("hidden", "is-closing");
-  deckReveal.setAttribute("aria-hidden", "false");
-  deckTile.setAttribute("aria-expanded", "true");
-  requestAnimationFrame(() => {
-    deckReveal.classList.add("is-open");
-    deckRevealCloseButton.focus();
+  openPopover({
+    element: deckReveal,
+    trigger: deckTile,
+    timerKey: "deckRevealHideTimer",
+    onOpen: () => deckRevealCloseButton.focus()
   });
 }
 
 function closeDeckReveal(options = {}) {
-  if (!deckReveal || deckReveal.classList.contains("hidden")) return;
-  window.clearTimeout(state.deckRevealHideTimer);
-  deckReveal.classList.remove("is-open");
-  deckReveal.classList.add("is-closing");
-  deckReveal.setAttribute("aria-hidden", "true");
-  deckTile.setAttribute("aria-expanded", "false");
-
-  const finish = () => {
-    deckReveal.classList.add("hidden");
-    deckReveal.classList.remove("is-closing");
-    state.deckRevealHideTimer = null;
-  };
-
-  if (options.immediate || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    finish();
-    return;
-  }
-  state.deckRevealHideTimer = window.setTimeout(finish, CLUE_CHOOSER_EXIT_MS);
+  closePopover({
+    element: deckReveal,
+    trigger: deckTile,
+    timerKey: "deckRevealHideTimer",
+    immediate: options.immediate
+  });
 }
 
 function renderRemainingDeck(cards) {
@@ -1885,8 +1896,6 @@ function showClueChooser(candidates) {
   closeClueChooserImmediately();
   return new Promise((resolve) => {
     state.clueChooserResolve = resolve;
-    window.clearTimeout(state.clueChooserHideTimer);
-    state.clueChooserHideTimer = null;
     clueChooserOptions.replaceChildren();
 
     for (const candidate of candidates) {
@@ -1898,11 +1907,10 @@ function showClueChooser(candidates) {
       clueChooserOptions.append(button);
     }
 
-    clueChooser.classList.remove("hidden", "is-closing");
-    clueChooser.setAttribute("aria-hidden", "false");
-    requestAnimationFrame(() => {
-      clueChooser.classList.add("is-open");
-      clueChooserOptions.querySelector("button")?.focus();
+    openPopover({
+      element: clueChooser,
+      timerKey: "clueChooserHideTimer",
+      onOpen: () => clueChooserOptions.querySelector("button")?.focus()
     });
   });
 }
@@ -1916,30 +1924,16 @@ function closeClueChooserImmediately() {
 }
 
 function closeClueChooserWithOptions(result, options = {}) {
-  if (!clueChooser) return;
-
   const resolve = state.clueChooserResolve;
   state.clueChooserResolve = null;
   if (resolve) resolve(result);
 
-  window.clearTimeout(state.clueChooserHideTimer);
-  clueChooser.classList.remove("is-open");
-  clueChooser.classList.add("is-closing");
-  clueChooser.setAttribute("aria-hidden", "true");
-
-  const finish = () => {
-    clueChooser.classList.add("hidden");
-    clueChooser.classList.remove("is-closing");
-    clueChooserOptions.replaceChildren();
-    state.clueChooserHideTimer = null;
-  };
-
-  if (options.immediate) {
-    finish();
-    return;
-  }
-
-  state.clueChooserHideTimer = window.setTimeout(finish, CLUE_CHOOSER_EXIT_MS);
+  closePopover({
+    element: clueChooser,
+    timerKey: "clueChooserHideTimer",
+    immediate: options.immediate,
+    onFinish: () => clueChooserOptions.replaceChildren()
+  });
 }
 
 function clueSelectionError(targetSeat, selectedIds) {
