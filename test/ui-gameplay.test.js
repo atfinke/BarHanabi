@@ -340,8 +340,9 @@ test("game settings live in a clue-style popover", () => {
     /settingsButton\.addEventListener\("click", \(\) => toggleSettingsPopover\(\)\);/,
     /function openSettingsPopover\(\)/,
     /function closeSettingsPopover\(\)/,
-    /settingsButton\.setAttribute\("aria-expanded", "true"\);/,
-    /settingsButton\.setAttribute\("aria-expanded", "false"\);/
+    /trigger\?\.setAttribute\("aria-expanded", "true"\);/,
+    /trigger\?\.setAttribute\("aria-expanded", "false"\);/,
+    /trigger: settingsButton,/
   ]) {
     assert.match(script, pattern);
   }
