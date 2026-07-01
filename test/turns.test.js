@@ -614,10 +614,11 @@ test("three bombs allow three failed plays before game over", async (t) => {
   const room = await createRoom();
   let state = await readState(room.code, "A");
 
-  while (state.bombs < 3) {
+  for (let attempts = 0; state.bombs < 3 && attempts < 30; attempts += 1) {
     state = await takeTurnPreferringFailedPlay(room.code, state);
   }
 
+  assert.equal(state.bombs, 3, "expected setup to reach three failed plays before the attempt cap");
   assert.equal(state.status, "playing");
   assert.equal(state.endReason, null);
 
@@ -626,6 +627,7 @@ test("three bombs allow three failed plays before game over", async (t) => {
   }
 
   assert.equal(state.bombs, 3);
+  assert.equal(state.status, "ended");
   assert.equal(state.endReason, "strikes");
 
   const blockedAfterEnd = await discardFirstCard(room.code, state);
