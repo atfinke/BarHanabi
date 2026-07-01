@@ -24,11 +24,24 @@ to deploy.
 - The user may edit this repo concurrently. Re-read target files and diffs
   before patching, keep edits narrow, and never overwrite unrelated local work.
 - Treat end-game changes as user-owned unless explicitly asked to work on them.
-- If changing gameplay actions, update or add a focused `node:test` test.
-- Keep tests focused on real behavior. Avoid needless, overcomplicated, or
-  brittle source-shape tests unless behavior cannot be exercised directly.
 - Before deploying, run `node --check server.js`, `node --check public/app.js`,
   and relevant `node --test` tests unless explicitly skipped.
+
+## Test Discipline
+
+- Tests are not a receipt for every edit. Add a new test only when it protects
+  meaningful behavior that could plausibly regress and would matter to a player,
+  deploy, or server contract.
+- Prefer updating existing behavior tests over adding new tests. For renames,
+  copy cleanup, selector cleanup, dead-code removal, or internal wiring changes,
+  update existing assertions and use `rg`/syntax checks when that is enough.
+- Do not add tests for pointless negatives or generic paths: unknown action
+  rejection, obsolete names staying removed, deleted controls not existing,
+  exact source text, or implementation-shape details unless behavior cannot be
+  exercised directly.
+- Before adding a new test, be able to state the failure it would catch. If the
+  answer is just "proves I changed it" or "guards against someone reverting this
+  exact cleanup," do not add the test.
 
 ## Deployment
 

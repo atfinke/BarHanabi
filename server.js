@@ -569,7 +569,7 @@ function handleAction(room, action) {
     return room;
   }
 
-  if (type === "verbal-clue") {
+  if (type === "give-clue") {
     assertGameInProgress(room);
     assertPlayerTurn(room, player);
     if (room.hints <= 0) {
@@ -580,7 +580,7 @@ function handleAction(room, action) {
     clearLiveCluePreview(room);
     room.lastResult = null;
     room.hints -= 1;
-    addLog(room, `${player.name} gave a verbal clue.`);
+    addLog(room, `${player.name} gave a clue.`);
     finishTurn(room, player);
     touch(room);
     return room;

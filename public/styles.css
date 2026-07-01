@@ -1103,7 +1103,7 @@ h2 {
   background: rgba(255, 214, 10, 0.12);
 }
 
-#verbalClueButton:not(:disabled) {
+#clueButton:not(:disabled) {
   border-color: rgba(199, 183, 255, 0.66);
   background: rgba(168, 138, 255, 0.24);
   box-shadow: 0 0 0 1px rgba(199, 183, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
@@ -1435,7 +1435,7 @@ h2 {
 
   #selfPlayButton,
   #selfDiscardButton,
-  #verbalClueButton {
+  #clueButton {
     min-height: 44px;
     font-size: 0.95rem;
   }
