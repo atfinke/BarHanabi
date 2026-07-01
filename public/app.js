@@ -70,7 +70,7 @@ const opponentClueLabel = document.querySelector("#opponentClueLabel");
 const opponentHand = document.querySelector("#opponentHand");
 const selfPlayButton = document.querySelector("#selfPlayButton");
 const selfDiscardButton = document.querySelector("#selfDiscardButton");
-const verbalClueButton = document.querySelector("#verbalClueButton");
+const clueButton = document.querySelector("#clueButton");
 const rotationWheel = document.querySelector("#rotationWheel");
 const autoClueToggle = document.querySelector("#autoCluePreviewToggle");
 const resetButton = document.querySelector("#resetButton");
@@ -113,7 +113,7 @@ turnStatus.addEventListener("keydown", handleTurnStatusKeyDown);
 roomCodeLabel.addEventListener("click", () => copyRoomLink());
 selfPlayButton.addEventListener("click", () => actionSelected(state.mySeat, "play"));
 selfDiscardButton.addEventListener("click", () => actionSelected(state.mySeat, "discard"));
-verbalClueButton.addEventListener("click", () => giveVerbalClue());
+clueButton.addEventListener("click", () => giveClue());
 rotationWheel.addEventListener("pointerdown", handleRotationWheelPointerDown);
 clueChooserCancel.addEventListener("click", () => closeClueChooser(null));
 clueChooser.addEventListener("click", (event) => {
@@ -1347,7 +1347,7 @@ function updateActionButtons() {
   const selectedActionCard = selectedCard(state.mySeat);
   selfPlayButton.disabled = state.pendingAction || !canAct || !selectedActionCard;
   selfDiscardButton.disabled = state.pendingAction || !canAct || !selectedActionCard;
-  verbalClueButton.disabled = state.pendingAction || !canAct || state.room.hints <= 0 || !hasValidOpponentClueSelection();
+  clueButton.disabled = state.pendingAction || !canAct || state.room.hints <= 0 || !hasValidOpponentClueSelection();
 }
 
 async function actionSelected(seat, type) {
@@ -1432,7 +1432,7 @@ function wait(ms) {
   });
 }
 
-async function giveVerbalClue() {
+async function giveClue() {
   const targetSeat = opponentSeat();
   const targetCardIds = selectedCardIds(targetSeat);
   if (targetCardIds.length === 0) {
@@ -1451,7 +1451,7 @@ async function giveVerbalClue() {
   if (!clue) return;
 
   const updated = await action({
-    type: "verbal-clue",
+    type: "give-clue",
     targetSeat,
     cardIds: targetCardIds,
     clue: { kind: clue.kind, value: clue.value }

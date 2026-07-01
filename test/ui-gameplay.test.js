@@ -128,7 +128,7 @@ test("mobile UI exposes current controls and omits retired controls", () => {
   for (const pattern of [
     /id="selfPlayButton"/,
     /id="selfDiscardButton"/,
-    /id="verbalClueButton"/,
+    /id="clueButton"/,
     /id="rotationWheel"[\s\S]*aria-label="Rotate selected card"/,
     /id="autoCluePreviewToggle"/,
     /id="selfClueLabel"/,
@@ -281,13 +281,13 @@ test("turn status is the deliberate seat switch control", () => {
   assert.doesNotMatch(script, /function renderSeatButtons/);
 });
 
-test("client keeps verbal clue selection and action-selection flows separate", () => {
+test("client keeps committed clue and action-selection flows separate", () => {
   const script = read("public/app.js");
 
   for (const pattern of [
     /cluePreview/,
     /type: "clue-selection"/,
-    /type: "verbal-clue"/,
+    /type: "give-clue"/,
     /peerSelectedCards: \{ A: \[\], B: \[\] \}/,
     /function canSelectOpponentCards/,
     /cardIds: targetCardIds/,
@@ -326,12 +326,12 @@ test("client disables clue action when selected cards have no legal clue", () =>
   const script = read("public/app.js");
 
   assert.match(script, /const autoClueToggle = document\.querySelector\("#autoCluePreviewToggle"\);/);
-  assert.match(script, /verbalClueButton\.addEventListener\("click", \(\) => giveVerbalClue\(\)\);/);
+  assert.match(script, /clueButton\.addEventListener\("click", \(\) => giveClue\(\)\);/);
   assert.match(script, /function selectedOpponentClueCandidates\(\)/);
   assert.match(script, /function hasValidOpponentClueSelection\(\)/);
   assert.match(script, /const targetCardIds = selectedCardIds\(opponentSeat\(\)\);/);
   assert.match(script, /return selectedOpponentClueCandidates\(\)\.length > 0;/);
-  assert.match(script, /verbalClueButton\.disabled = state\.pendingAction \|\| !canAct \|\| state\.room\.hints <= 0 \|\| !hasValidOpponentClueSelection\(\);/);
+  assert.match(script, /clueButton\.disabled = state\.pendingAction \|\| !canAct \|\| state\.room\.hints <= 0 \|\| !hasValidOpponentClueSelection\(\);/);
   assert.doesNotMatch(script, /autoClueButton/);
 });
 
@@ -444,7 +444,7 @@ test("client disables teammate selection when hints are unavailable", () => {
 
   assert.match(script, /function canSelectOpponentCards\(\) \{[\s\S]*state\.room\.hints > 0;/);
   assert.match(script, /element\.dataset\.seat !== state\.mySeat && isLocallySelected && canSelectOpponentCards\(\)/);
-  assert.match(script, /verbalClueButton\.disabled =[\s\S]*state\.room\.hints <= 0/);
+  assert.match(script, /clueButton\.disabled =[\s\S]*state\.room\.hints <= 0/);
 });
 
 test("action card animation hides table handoff and deflects missed plays", () => {

@@ -111,7 +111,7 @@ function rankClueLabel(rank, count) {
   return `${labels[rank]}${count === 1 ? "" : "s"}`;
 }
 
-test("built-in clue actions are rejected because clues are verbal", async (t) => {
+test("retired built-in clue-card actions are rejected by the system clue flow", async (t) => {
   const server = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
     env: { ...process.env, PORT: String(PORT) },
@@ -155,7 +155,7 @@ test("built-in clue actions are rejected because clues are verbal", async (t) =>
   assert.equal("color" in marked[0], false, "receiver still must not see own color");
 });
 
-test("verbal clues must name the exact selected rank or color set", async (t) => {
+test("committed clues must name the exact selected rank or color set", async (t) => {
   const server = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
     env: { ...process.env, PORT: String(PORT) },
@@ -170,7 +170,7 @@ test("verbal clues must name the exact selected rank or color set", async (t) =>
   const validRankClue = await postAction({
     code: duplicateRank.room.code,
     viewerSeat: "A",
-    type: "verbal-clue",
+    type: "give-clue",
     targetSeat: "B",
     cardIds: selectedRankIds,
     clue: { kind: "rank", value: rank }
@@ -192,7 +192,7 @@ test("verbal clues must name the exact selected rank or color set", async (t) =>
   const missingRankClue = await postAction({
     code: missingRank.room.code,
     viewerSeat: "A",
-    type: "verbal-clue",
+    type: "give-clue",
     targetSeat: "B",
     cardIds: [missingRank.match.cards[0].id],
     clue: { kind: "rank", value: missingRank.match.rank }
@@ -205,7 +205,7 @@ test("verbal clues must name the exact selected rank or color set", async (t) =>
   const invalidClue = await postAction({
     code: invalidPair.room.code,
     viewerSeat: "A",
-    type: "verbal-clue",
+    type: "give-clue",
     targetSeat: "B",
     cardIds: invalidPair.match.map((card) => card.id),
     clue: { kind: "rank", value: invalidPair.match[0].rank }
@@ -220,7 +220,7 @@ test("verbal clues must name the exact selected rank or color set", async (t) =>
   const rainbowClue = await postAction({
     code: rainbowClueRoom.code,
     viewerSeat: "A",
-    type: "verbal-clue",
+    type: "give-clue",
     targetSeat: "B",
     cardIds: [targetCard.id],
     clue: { kind: "color", value: "rainbow" }
@@ -228,6 +228,34 @@ test("verbal clues must name the exact selected rank or color set", async (t) =>
 
   assert.equal(rainbowClue.response.status, 400, JSON.stringify(rainbowClue.body));
   assert.equal(rainbowClue.body.error, "No valid clue for those cards.");
+});
+
+test("legacy verbal-clue actions are rejected by system clues", async (t) => {
+  const server = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: { ...process.env, PORT: String(PORT) },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  t.after(() => server.kill("SIGTERM"));
+  await waitForServer(server);
+
+  const duplicateRank = await createRoomWithTargetHand(duplicateRankGroup);
+  const selectedRankIds = duplicateRank.match.cards.map((card) => card.id);
+  const legacyClue = await postAction({
+    code: duplicateRank.room.code,
+    viewerSeat: "A",
+    type: "verbal-clue",
+    targetSeat: "B",
+    cardIds: selectedRankIds,
+    clue: { kind: "rank", value: duplicateRank.match.rank }
+  });
+
+  assert.equal(legacyClue.response.status, 400, JSON.stringify(legacyClue.body));
+  assert.equal(legacyClue.body.error, "Unknown action.");
+
+  const state = await readState(duplicateRank.room.code, "A");
+  assert.equal(state.clueSelection, null);
+  assert.equal(state.hints, 8);
 });
 
 test("rainbow-only selections can be clued as absent colors only", async (t) => {
@@ -243,7 +271,7 @@ test("rainbow-only selections can be clued as absent colors only", async (t) => 
   const absentColorClue = await postAction({
     code: validRainbowRoom.room.code,
     viewerSeat: "A",
-    type: "verbal-clue",
+    type: "give-clue",
     targetSeat: "B",
     cardIds: [validRainbowRoom.match.rainbow.id],
     clue: { kind: "color", value: validRainbowRoom.match.absentColor }
@@ -265,7 +293,7 @@ test("rainbow-only selections can be clued as absent colors only", async (t) => 
   const presentColorClue = await postAction({
     code: invalidRainbowRoom.room.code,
     viewerSeat: "A",
-    type: "verbal-clue",
+    type: "give-clue",
     targetSeat: "B",
     cardIds: [invalidRainbowRoom.match.rainbow.id],
     clue: { kind: "color", value: invalidRainbowRoom.match.presentColor }
@@ -288,7 +316,7 @@ test("live clue previews do not clear the previous committed clue", async (t) =>
   const firstClue = await postAction({
     code: rankRoom.room.code,
     viewerSeat: "A",
-    type: "verbal-clue",
+    type: "give-clue",
     targetSeat: "B",
     cardIds: rankRoom.match.cards.map((card) => card.id),
     clue: { kind: "rank", value: rankRoom.match.rank }

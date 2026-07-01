@@ -190,7 +190,7 @@ async function spendTwoHintsAndReturnToA(code, aCardId) {
   const firstClue = await postAction({
     code,
     viewerSeat: "A",
-    type: "verbal-clue",
+    type: "give-clue",
     targetSeat: "B",
     cardIds: bClue.cardIds,
     clue: bClue.clue
@@ -202,7 +202,7 @@ async function spendTwoHintsAndReturnToA(code, aCardId) {
   const secondClue = await postAction({
     code,
     viewerSeat: "B",
-    type: "verbal-clue",
+    type: "give-clue",
     targetSeat: "A",
     cardIds: aClue.cardIds,
     clue: aClue.clue
@@ -393,7 +393,7 @@ test("play and discard actions must follow the active turn", async (t) => {
   const emptyClue = await postAction({
     code: room.code,
     viewerSeat: "B",
-    type: "verbal-clue",
+    type: "give-clue",
     targetSeat: "A",
     cardIds: []
   });
@@ -409,7 +409,7 @@ test("play and discard actions must follow the active turn", async (t) => {
   const clueTurn = await postAction({
     code: room.code,
     viewerSeat: "B",
-    type: "verbal-clue",
+    type: "give-clue",
     targetSeat: "A",
     cardIds: clueCardIds,
     clue: clue.clue
@@ -507,7 +507,7 @@ test("hints stay within limits and zero hints block clue actions", async (t) => 
   const firstClue = await postAction({
     code: oneHintRoom.code,
     viewerSeat: "A",
-    type: "verbal-clue",
+    type: "give-clue",
     targetSeat: "B",
     cardIds: clue.cardIds,
     clue: clue.clue
@@ -532,7 +532,7 @@ test("hints stay within limits and zero hints block clue actions", async (t) => 
   const blockedClue = await postAction({
     code: oneHintRoom.code,
     viewerSeat: "B",
-    type: "verbal-clue",
+    type: "give-clue",
     targetSeat: "A",
     cardIds: [aCard.id]
   });
@@ -580,7 +580,7 @@ test("drawing the last deck card starts one final turn per player", async (t) =>
   const firstFinalTurn = await postAction({
     code: room.code,
     viewerSeat: firstFinalSeat,
-    type: "verbal-clue",
+    type: "give-clue",
     targetSeat: firstFinalTargetSeat,
     cardIds: firstFinalClue.cardIds,
     clue: firstFinalClue.clue
