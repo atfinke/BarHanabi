@@ -68,14 +68,15 @@
             title="Double tap to switch player"
           >Their Turn</strong>
           <div class="top-actions">
-            <label class="auto-clue-toggle" for="autoCluePreviewToggle" title="Auto-send a clue when there is only one valid option">
-              <input id="autoCluePreviewToggle" type="checkbox" aria-label="Auto clue">
-              <span class="auto-clue-track" aria-hidden="true">
-                <span class="auto-clue-thumb"></span>
-              </span>
-              <span class="auto-clue-text">Auto Clue</span>
-            </label>
-            <button class="reset-button" type="button" id="resetButton">Restart</button>
+            <button
+              class="settings-button"
+              type="button"
+              id="settingsButton"
+              aria-label="Settings"
+              aria-controls="settingsPopover"
+              aria-expanded="false"
+              title="Settings"
+            ></button>
           </div>
         </header>
 
@@ -137,6 +138,32 @@
           <h2 id="clueChooserTitle">Choose clue</h2>
           <div class="clue-chooser-options" id="clueChooserOptions"></div>
           <button class="clue-chooser-cancel" type="button" id="clueChooserCancel">Cancel</button>
+        </div>
+      </div>
+
+      <div class="settings-popover hidden" id="settingsPopover" role="dialog" aria-modal="true" aria-labelledby="settingsPopoverTitle" aria-hidden="true">
+        <div class="settings-popover-panel">
+          <div class="settings-popover-header">
+            <h2 id="settingsPopoverTitle">Settings</h2>
+            <button class="settings-close-button" type="button" id="settingsCloseButton" aria-label="Close settings" title="Close settings"></button>
+          </div>
+          <div class="settings-controls">
+            <button class="settings-action-button" type="button" id="resetButton">Restart</button>
+            <label class="settings-toggle" for="autoCluePreviewToggle" title="Auto-send a clue when there is only one valid option">
+              <span>Auto Clue</span>
+              <input id="autoCluePreviewToggle" type="checkbox" aria-label="Auto clue">
+              <span class="settings-toggle-track" aria-hidden="true">
+                <span class="settings-toggle-thumb"></span>
+              </span>
+            </label>
+            <label class="settings-toggle" for="manualRotationToggle">
+              <span>Manual Rotation</span>
+              <input id="manualRotationToggle" type="checkbox" aria-label="Manual rotation">
+              <span class="settings-toggle-track" aria-hidden="true">
+                <span class="settings-toggle-thumb"></span>
+              </span>
+            </label>
+          </div>
         </div>
       </div>
 

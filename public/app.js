@@ -47,7 +47,8 @@ const state = {
   tableStateHold: null,
   pendingDrawAnimation: null,
   toastTimer: null,
-  clueChooserResolve: null
+  clueChooserResolve: null,
+  settingsPopoverHideTimer: null
 };
 
 const setupView = document.querySelector("#setupView");
@@ -72,7 +73,11 @@ const selfPlayButton = document.querySelector("#selfPlayButton");
 const selfDiscardButton = document.querySelector("#selfDiscardButton");
 const verbalClueButton = document.querySelector("#verbalClueButton");
 const rotationWheel = document.querySelector("#rotationWheel");
+const settingsButton = document.querySelector("#settingsButton");
+const settingsPopover = document.querySelector("#settingsPopover");
+const settingsCloseButton = document.querySelector("#settingsCloseButton");
 const autoClueToggle = document.querySelector("#autoCluePreviewToggle");
+const manualRotationToggle = document.querySelector("#manualRotationToggle");
 const resetButton = document.querySelector("#resetButton");
 const neededDiscardPile = document.querySelector("#neededDiscardPile");
 const spentDiscardPile = document.querySelector("#spentDiscardPile");
@@ -115,6 +120,13 @@ selfPlayButton.addEventListener("click", () => actionSelected(state.mySeat, "pla
 selfDiscardButton.addEventListener("click", () => actionSelected(state.mySeat, "discard"));
 verbalClueButton.addEventListener("click", () => giveVerbalClue());
 rotationWheel.addEventListener("pointerdown", handleRotationWheelPointerDown);
+settingsButton.addEventListener("click", () => toggleSettingsPopover());
+settingsCloseButton.addEventListener("click", () => closeSettingsPopover());
+settingsPopover.addEventListener("click", (event) => {
+  if (event.target === settingsPopover) {
+    closeSettingsPopover();
+  }
+});
 clueChooserCancel.addEventListener("click", () => closeClueChooser(null));
 clueChooser.addEventListener("click", (event) => {
   if (event.target === clueChooser) {
@@ -124,10 +136,13 @@ clueChooser.addEventListener("click", (event) => {
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !clueChooser.classList.contains("hidden")) {
     closeClueChooser(null);
+  } else if (event.key === "Escape" && !settingsPopover.classList.contains("hidden")) {
+    closeSettingsPopover();
   }
 });
 
 resetButton.addEventListener("click", async () => {
+  closeSettingsPopover();
   if (!window.confirm("Start a fresh game in this room?")) return;
   const updated = await action({ type: "reset" });
   if (updated) {
@@ -257,6 +272,47 @@ function confirmSeatSwitch() {
   const nextSeat = opponentSeat();
   if (!window.confirm("Switch to the other player?")) return;
   switchSeat(nextSeat);
+}
+
+function toggleSettingsPopover() {
+  if (settingsPopover.classList.contains("hidden")) {
+    openSettingsPopover();
+  } else {
+    closeSettingsPopover();
+  }
+}
+
+function openSettingsPopover() {
+  window.clearTimeout(state.settingsPopoverHideTimer);
+  state.settingsPopoverHideTimer = null;
+  settingsPopover.classList.remove("hidden", "is-closing");
+  settingsPopover.setAttribute("aria-hidden", "false");
+  settingsButton.setAttribute("aria-expanded", "true");
+  requestAnimationFrame(() => {
+    settingsPopover.classList.add("is-open");
+    settingsPopover.querySelector("button, input")?.focus();
+  });
+}
+
+function closeSettingsPopover() {
+  if (!settingsPopover || settingsPopover.classList.contains("hidden")) return;
+  window.clearTimeout(state.settingsPopoverHideTimer);
+  settingsPopover.classList.remove("is-open");
+  settingsPopover.classList.add("is-closing");
+  settingsPopover.setAttribute("aria-hidden", "true");
+  settingsButton.setAttribute("aria-expanded", "false");
+
+  const finish = () => {
+    settingsPopover.classList.add("hidden");
+    settingsPopover.classList.remove("is-closing");
+    state.settingsPopoverHideTimer = null;
+  };
+
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    finish();
+    return;
+  }
+  state.settingsPopoverHideTimer = window.setTimeout(finish, CLUE_CHOOSER_EXIT_MS);
 }
 
 function switchSeat(nextSeat) {
