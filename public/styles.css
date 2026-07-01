@@ -1096,16 +1096,16 @@ h2 {
 }
 
 .self-controls {
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  display: flex;
   align-items: center;
 }
 
-.self-controls.height-animating {
-  overflow: hidden;
-  transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+.self-controls button {
+  flex: 1 1 0;
 }
 
 .rotation-wheel {
+  flex: 0 0 58px;
   width: 58px;
   height: 58px;
   justify-self: end;
@@ -1113,9 +1113,22 @@ h2 {
   background: transparent;
   touch-action: none;
   user-select: none;
+  opacity: 1;
+  overflow: hidden;
+  transition:
+    flex-basis 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    height 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .rotation-wheel.hidden {
+  display: block !important;
+  flex-basis: 0;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  overflow: hidden;
   pointer-events: none;
 }
 

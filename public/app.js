@@ -9,7 +9,6 @@ const ACTION_MOVE_MS = 900;
 const ACTION_SETTLE_MS = 90;
 const CARD_LAYOUT_SYNC_MS = 140;
 const CARD_LAYOUT_ANIMATION_MS = 220;
-const MANUAL_ROTATION_LAYOUT_MS = 220;
 const DISCARD_CARD_WIDTH = 34;
 const DISCARD_CARD_HEIGHT = DISCARD_CARD_WIDTH * 510 / 322;
 const MISPLAY_FIRST_LEG_MS = 760;
@@ -53,7 +52,8 @@ const state = {
   toastTimer: null,
   clueChooserResolve: null,
   settingsPopoverHideTimer: null,
-  selfControlsHeightTimer: null
+  rotationWheelAnimationFrame: null,
+  rotationWheelAnimationTimer: null
 };
 
 const setupView = document.querySelector("#setupView");
@@ -77,7 +77,6 @@ const opponentHand = document.querySelector("#opponentHand");
 const selfPlayButton = document.querySelector("#selfPlayButton");
 const selfDiscardButton = document.querySelector("#selfDiscardButton");
 const clueButton = document.querySelector("#clueButton");
-const selfControls = document.querySelector(".self-controls");
 const rotationWheel = document.querySelector("#rotationWheel");
 const settingsButton = document.querySelector("#settingsButton");
 const settingsPopover = document.querySelector("#settingsPopover");
@@ -977,8 +976,7 @@ function bindCardPointer(element, surface, player, card, options) {
 function renderRotationWheel() {
   const targets = selectedOwnLayoutTargets();
   const canShow = manualRotationEnabled() && canArrangeOwnCards();
-  rotationWheel.classList.toggle("hidden", !canShow);
-  rotationWheel.setAttribute("aria-hidden", canShow ? "false" : "true");
+  setRotationWheelVisible(canShow);
   if (!canShow) return;
 
   const layout = targets.length > 0
@@ -987,44 +985,44 @@ function renderRotationWheel() {
   setRotationWheelAngle(layout.rotation);
 }
 
-function handleManualRotationToggle() {
-  animateSelfControlsHeightChange(() => {
-    if (!manualRotationEnabled()) {
-      animateOwnCardsToAutoRotation();
-    }
-    renderRotationWheel();
+function setRotationWheelVisible(canShow) {
+  rotationWheel.setAttribute("aria-hidden", canShow ? "false" : "true");
+  const isVisible = !rotationWheel.classList.contains("hidden");
+  if (canShow === isVisible) return;
+
+  window.clearTimeout(state.rotationWheelAnimationTimer);
+  window.cancelAnimationFrame(state.rotationWheelAnimationFrame);
+
+  const currentRect = rotationWheel.getBoundingClientRect();
+  rotationWheel.style.flexBasis = `${Math.round(currentRect.width)}px`;
+  rotationWheel.style.width = `${Math.round(currentRect.width)}px`;
+  rotationWheel.style.height = `${Math.round(currentRect.height)}px`;
+  rotationWheel.style.opacity = window.getComputedStyle(rotationWheel).opacity;
+  rotationWheel.classList.toggle("hidden", !canShow);
+
+  void rotationWheel.getBoundingClientRect();
+  state.rotationWheelAnimationFrame = window.requestAnimationFrame(() => {
+    rotationWheel.style.flexBasis = canShow ? "58px" : "0px";
+    rotationWheel.style.width = canShow ? "58px" : "0px";
+    rotationWheel.style.height = canShow ? "58px" : "0px";
+    rotationWheel.style.opacity = canShow ? "1" : "0";
+    state.rotationWheelAnimationFrame = null;
   });
+
+  state.rotationWheelAnimationTimer = window.setTimeout(() => {
+    rotationWheel.style.flexBasis = "";
+    rotationWheel.style.width = "";
+    rotationWheel.style.height = "";
+    rotationWheel.style.opacity = "";
+    state.rotationWheelAnimationTimer = null;
+  }, CARD_LAYOUT_ANIMATION_MS + 40);
 }
 
-function animateSelfControlsHeightChange(change) {
-  if (!selfControls) {
-    change();
-    return;
+function handleManualRotationToggle() {
+  if (!manualRotationEnabled()) {
+    animateOwnCardsToAutoRotation();
   }
-
-  window.clearTimeout(state.selfControlsHeightTimer);
-  selfControls.classList.remove("height-animating");
-  selfControls.style.height = "";
-
-  const startHeight = selfControls.getBoundingClientRect().height;
-  change();
-  const endHeight = selfControls.getBoundingClientRect().height;
-  if (!Number.isFinite(startHeight) || !Number.isFinite(endHeight) || Math.abs(startHeight - endHeight) < 0.5) {
-    return;
-  }
-
-  selfControls.style.height = `${startHeight}px`;
-  void selfControls.getBoundingClientRect();
-  selfControls.classList.add("height-animating");
-  window.requestAnimationFrame(() => {
-    selfControls.style.height = `${endHeight}px`;
-  });
-
-  state.selfControlsHeightTimer = window.setTimeout(() => {
-    selfControls.classList.remove("height-animating");
-    selfControls.style.height = "";
-    state.selfControlsHeightTimer = null;
-  }, MANUAL_ROTATION_LAYOUT_MS + 40);
+  renderRotationWheel();
 }
 
 function animateOwnCardsToAutoRotation() {
