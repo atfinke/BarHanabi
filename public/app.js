@@ -394,10 +394,6 @@ function toggleSettingsPopover() {
   }
 }
 
-function prefersReducedMotion() {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
 function openPopover({ element, trigger, timerKey, onOpen }) {
   window.clearTimeout(state[timerKey]);
   state[timerKey] = null;
@@ -425,7 +421,7 @@ function closePopover({ element, trigger, timerKey, immediate = false, onFinish 
     onFinish?.();
   };
 
-  if (immediate || prefersReducedMotion()) {
+  if (immediate) {
     finish();
     return;
   }
