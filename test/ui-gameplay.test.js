@@ -129,6 +129,7 @@ test("mobile UI exposes current controls and omits retired controls", () => {
     /id="selfPlayButton"/,
     /id="selfDiscardButton"/,
     /id="verbalClueButton"/,
+    /id="rotationWheel"[\s\S]*aria-label="Rotate selected card"/,
     /id="autoCluePreviewToggle"/,
     /id="selfClueLabel"/,
     /id="resetButton"/,
@@ -464,28 +465,39 @@ test("action card animation hides table handoff and deflects missed plays", () =
   assert.match(script, /overlay\.remove\(\);[\s\S]*releaseTableStateHold\(snapshot\.key\);[\s\S]*window\.requestAnimationFrame\(\(\) => \{[\s\S]*animateReplacementDraw\(snapshot\);[\s\S]*\}\);/);
 });
 
-test("card interactions move with one pointer and rotate with touch or option-drag", () => {
+test("card interactions move with one pointer and rotate with wheel or option-drag", () => {
   const script = read("public/app.js");
   const styles = read("public/styles.css");
+  const html = read("public/index.html");
 
   for (const pattern of [
     /function bindCardPointer/,
+    /const rotationWheel = document\.querySelector\("#rotationWheel"\);/,
+    /rotationWheel\.addEventListener\("pointerdown", handleRotationWheelPointerDown\);/,
+    /function renderRotationWheel\(\)/,
+    /function handleRotationWheelPointerDown\(event\)/,
+    /function selectedOwnLayoutTargets\(\)/,
+    /function applyCardLayoutUpdate\(surface, card, layout/,
+    /rotationWheel\.classList\.toggle\("hidden", !canShow\);/,
     /const joiningGesture = gesture && state\.activeDrag\?\.seat === player\.seat && state\.activeDrag\?\.cardId === card\.id;/,
     /pointers: new Map\(\[\[event\.pointerId, pointerSnapshot\(event\)\]\]\)/,
     /function pointerSnapshot\(event\)/,
     /function optionRotationStartFor\(pointer, layout, surfaceRect\)/,
     /function cardCenterForLayout\(layout, surfaceRect\)/,
+    /function rectCenter\(rect\)/,
     /function pointerAngle\(first, second\)/,
     /function angleDelta\(current, start\)/,
     /rotation: gesture\.layout\.rotation/,
-    /rotation: gesture\.rotationStart\.layout\.rotation \+ delta/,
     /if \(event\.altKey && gesture\.pointers\.size === 1\)/,
     /if \(moveEvent\.altKey\)/,
     /pointerAngle\(gesture\.optionRotationStart\.center, pointers\[0\]\)/,
     /rotation: gesture\.optionRotationStart\.layout\.rotation \+ delta/,
+    /const delta = angleDelta\(pointerAngle\(gesture\.center, pointer\), gesture\.startAngle\);/,
+    /rotation: layout\.rotation \+ delta/,
+    /setRotationWheelAngle\(gesture\.latestTargets\[0\]\.layout\.rotation\);/,
     /x: surfaceRect\.left \+ \(surfaceRect\.width \* layout\.x\) \/ 100/,
     /y: surfaceRect\.top \+ \(surfaceRect\.height \* layout\.y\) \/ 100/,
-    /rememberLocalLayout\(card\.id, gesture\.latestLayout\);/,
+    /rememberLocalLayout\(card\.id, next\);/,
     /sendMove\(false\);/,
     /sendMove\(true\);/,
     /type: "move-card"/,
@@ -495,9 +507,14 @@ test("card interactions move with one pointer and rotate with touch or option-dr
     assert.match(script, pattern);
   }
 
+  assert.match(html, /class="rotation-wheel hidden" id="rotationWheel"/);
+  assert.match(styles, /\.rotation-wheel \{[\s\S]*touch-action: none;/);
+  assert.match(styles, /\.rotation-wheel-track \{/);
+  assert.match(styles, /\.rotation-wheel-knob \{/);
   assert.match(styles, /\.self-hand \{[\s\S]*touch-action: none;/);
   assert.doesNotMatch(script, /rotateSelected|rotateLeftButton|rotateRightButton/);
   assert.doesNotMatch(script, /rotation: autoRotationForX\(x\)/);
+  assert.doesNotMatch(script, /gesture\.rotationStart|pointers\.length >= 2/);
   assert.doesNotMatch(script, /gesturestart|gesturechange|gestureend|gesturecancel|GestureEvent|event\.rotation/);
 });
 
