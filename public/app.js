@@ -318,7 +318,8 @@ function reconnectCurrentRoom() {
 
 function applyRoomState(nextRoom) {
   const previousTableRoom = tableDisplayRoom();
-  const animation = actionAnimationSnapshot(nextRoom);
+  const deferRenderForDrag = Boolean(state.activeDrag);
+  const animation = deferRenderForDrag ? null : actionAnimationSnapshot(nextRoom);
   fadeRetiredResultHighlight(previousTableRoom, nextRoom);
   if (animation && previousTableRoom) {
     if (animation.replacement) {
@@ -336,7 +337,7 @@ function applyRoomState(nextRoom) {
   clearMissingSelections();
   applySharedSelection();
   setConnection(true);
-  if (state.activeDrag) {
+  if (deferRenderForDrag) {
     state.pendingRoom = state.room;
     return;
   }
