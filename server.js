@@ -213,6 +213,7 @@ function publicState(room, viewerSeat = "") {
     updatedAt: room.updatedAt,
     version: room.version,
     deckCount: room.deck.length,
+    ...(room.status === "ended" ? { remainingDeck: room.deck.slice().reverse().map(publicCard) } : {}),
     discard: room.discard,
     fireworks: room.fireworks,
     bombs: room.bombs,

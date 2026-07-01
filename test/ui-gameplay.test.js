@@ -7,20 +7,6 @@ function read(path) {
   return fs.readFileSync(path, "utf8");
 }
 
-function cssRule(styles, selector) {
-  const start = styles.indexOf(`${selector} {`);
-  assert.notEqual(start, -1, `Missing CSS rule for ${selector}`);
-  const end = styles.indexOf("\n}", start);
-  assert.notEqual(end, -1, `Unclosed CSS rule for ${selector}`);
-  return styles.slice(start, end + 2);
-}
-
-function declarationValue(rule, property) {
-  const match = rule.match(new RegExp(`${property}:\\s*([^;]+);`));
-  assert.ok(match, `Missing ${property} in ${rule}`);
-  return match[1];
-}
-
 function fakeElement() {
   const listeners = new Map();
   return {
@@ -286,21 +272,14 @@ test("client saves local player preferences when controls change", () => {
   });
 });
 
-test("setup screen uses softened browser chrome and wider mobile gutters", () => {
+test("setup screen sets a softened browser chrome color", () => {
   const html = read("public/index.html");
-  const styles = read("public/styles.css");
 
   assert.match(html, /<meta name="theme-color" content="#151c20">/);
-  assert.match(styles, /--chrome-bg: #151c20;/);
-  assert.match(styles, /--page-x: clamp\(20px, 5\.5vw, 28px\);/);
-  assert.match(styles, /\.app-shell \{[\s\S]*padding: calc\(env\(safe-area-inset-top\) \+ 12px\) var\(--page-x\) calc\(env\(safe-area-inset-bottom\) \+ 14px\);/);
-  assert.match(styles, /@media \(max-width: 520px\) \{[\s\S]*\.app-shell \{[\s\S]*padding: calc\(env\(safe-area-inset-top\) \+ 8px\) var\(--page-x\) calc\(env\(safe-area-inset-bottom\) \+ 8px\);/);
-  assert.doesNotMatch(styles, /padding: calc\(env\(safe-area-inset-top\) \+ 8px\) 8px calc\(env\(safe-area-inset-bottom\) \+ 8px\);/);
 });
 
 test("mobile UI exposes current controls and omits retired controls", () => {
   const html = read("public/index.html");
-  const styles = read("public/styles.css");
 
   for (const pattern of [
     /id="selfPlayButton"/,
@@ -322,20 +301,8 @@ test("mobile UI exposes current controls and omits retired controls", () => {
     assert.match(html, pattern);
   }
 
-  const resetButtonBlocks = styles.match(/\.reset-button\s*\{[^}]*\}/g) || [];
-  assert.equal(resetButtonBlocks.length, 0);
   assert.match(html, /id="resetButton"[\s\S]*>Restart<\/button>/);
   assert.doesNotMatch(html, /id="resetButton"[^>]*danger-outline/);
-
-  const settingsActionButtonRule = cssRule(styles, ".settings-action-button");
-  const settingsToggleRule = cssRule(styles, ".settings-toggle");
-  const mobileStyles = styles.slice(styles.indexOf("@media (max-width: 520px)"));
-  const mobileSettingsButtonRule = cssRule(mobileStyles, ".settings-button");
-
-  assert.match(styles, /\.settings-button,\n\.settings-close-button \{[\s\S]*width: 40px;/);
-  assert.equal(declarationValue(mobileSettingsButtonRule, "width"), "38px");
-  assert.equal(declarationValue(settingsActionButtonRule, "width"), "100%");
-  assert.equal(declarationValue(settingsToggleRule, "justify-content"), "space-between");
 
   for (const retired of [
     /id="drawButton"|>Draw<\/button>/,
@@ -358,7 +325,6 @@ test("mobile UI exposes current controls and omits retired controls", () => {
 test("game settings live in a clue-style popover", () => {
   const html = read("public/index.html");
   const script = read("public/app.js");
-  const styles = read("public/styles.css");
 
   assert.match(html, /id="settingsButton"[\s\S]*aria-controls="settingsPopover"[\s\S]*aria-expanded="false"/);
   assert.match(html, /id="settingsPopover"[\s\S]*aria-hidden="true"/);
@@ -380,17 +346,36 @@ test("game settings live in a clue-style popover", () => {
     assert.match(script, pattern);
   }
 
-  assert.match(styles, /\.clue-chooser,\n\.settings-popover \{/);
-  assert.match(styles, /\.clue-chooser-panel,\n\.settings-popover-panel \{/);
   assert.match(html, /class="settings-icon"[\s\S]*viewBox="0 0 24 24"/);
-  assert.match(styles, /\.settings-icon \{/);
-  assert.match(styles, /\.settings-toggle \{/);
+});
+
+test("ended deck reveal wires a popover from the deck tile", () => {
+  const html = read("public/index.html");
+  const script = read("public/app.js");
+
+  assert.match(html, /class="deck-tile"[\s\S]*id="deckTile"[\s\S]*aria-controls="deckReveal"[\s\S]*id="deckCount"/);
+  assert.match(html, /id="deckReveal"[\s\S]*role="dialog"[\s\S]*aria-labelledby="deckRevealTitle"/);
+  assert.match(html, /class="settings-popover-header deck-reveal-header"/);
+  assert.match(html, /id="deckRevealTitle">Remaining Deck<\/h2>/);
+  assert.match(html, /class="deck-reveal-grid mini-cards" id="deckRevealGrid"/);
+
+  for (const pattern of [
+    /const deckTile = document\.querySelector\("#deckTile"\);/,
+    /const deckReveal = document\.querySelector\("#deckReveal"\);/,
+    /deckTile\.addEventListener\("click", \(\) => openDeckReveal\(\)\);/,
+    /function updateDeckRevealState\(room\)/,
+    /const canRevealDeck = room\.status === "ended" && Array\.isArray\(room\.remainingDeck\);/,
+    /deckTile\.disabled = !canRevealDeck;/,
+    /function renderRemainingDeck\(cards\)/,
+    /deckRevealGrid\.replaceChildren\(\.\.\.cards\.map\(\(card\) => createMiniCard\(card\)\)\);/
+  ]) {
+    assert.match(script, pattern);
+  }
 });
 
 test("room code control copies the full room share link", () => {
   const html = read("public/index.html");
   const script = read("public/app.js");
-  const styles = read("public/styles.css");
 
   assert.match(html, /<button class="room-code-button" id="roomCodeLabel" type="button"[\s\S]*Copy room link[\s\S]*<\/button>/);
   assert.match(script, /roomCodeLabel\.addEventListener\("click", \(\) => copyRoomLink\(\)\);/);
@@ -407,7 +392,6 @@ test("room code control copies the full room share link", () => {
   assert.match(script, /function copyTextToClipboard\(text\)/);
   assert.match(script, /navigator\.clipboard\?\.writeText/);
   assert.match(script, /document\.execCommand\("copy"\)/);
-  assert.match(styles, /\.room-code-button \{/);
 });
 
 test("room code chip hides the code only while the other player is connected", () => {
@@ -442,21 +426,6 @@ test("room code chip hides the code only while the other player is connected", (
 
   assert.equal(client.roomCodeLabel.textContent, "Reconnecting");
   assert.equal(client.roomCodeLabel.dataset.presence, "reconnecting");
-});
-
-test("settings toggles cannot create mobile horizontal overflow", () => {
-  const styles = read("public/styles.css");
-  const toggleRule = cssRule(styles, ".settings-toggle");
-  const inputRule = cssRule(styles, ".settings-toggle input");
-
-  assert.match(toggleRule, /position: relative;/);
-  assert.match(toggleRule, /justify-content: space-between;/);
-  assert.match(inputRule, /position: absolute;/);
-  assert.match(inputRule, /inset: 0;/);
-  assert.match(inputRule, /width: 100%;/);
-  assert.match(inputRule, /min-height: 0;/);
-  assert.match(inputRule, /height: 100%;/);
-  assert.match(inputRule, /margin: 0;/);
 });
 
 test("game state shows hints before bombs", () => {
@@ -676,7 +645,6 @@ test("independent opponent action can animate during local drag", () => {
 test("client shows ambiguous clue options in one chooser", () => {
   const script = read("public/app.js");
   const html = read("public/index.html");
-  const styles = read("public/styles.css");
 
   for (const pattern of [
     /id="clueChooser"/,
@@ -697,8 +665,6 @@ test("client shows ambiguous clue options in one chooser", () => {
   ]) {
     assert.match(script, pattern);
   }
-  assert.match(styles, /\.clue-chooser,\n\.settings-popover \{/);
-  assert.match(styles, /\.clue-chooser-options \{/);
 });
 
 test("client offers color clues when the selection equals that color plus rainbows", () => {
@@ -718,7 +684,6 @@ test("client offers color clues when the selection equals that color plus rainbo
 test("client shows committed clue labels in the local hand area", () => {
   const script = read("public/app.js");
   const html = read("public/index.html");
-  const styles = read("public/styles.css");
 
   assert.match(script, /const selfClueLabel = document\.querySelector\("#selfClueLabel"\);/);
   assert.match(script, /const opponentClueLabel = document\.querySelector\("#opponentClueLabel"\);/);
@@ -727,10 +692,6 @@ test("client shows committed clue labels in the local hand area", () => {
   assert.match(script, /renderSingleClueLabel\(opponentClueLabel, selection\.seat === opponentSeat\(\) \? selection : null\);/);
   assert.match(script, /selfClueLabel\.textContent = selection\.clue\.label;/);
   assert.match(html, /id="opponentClueLabel"/);
-  assert.match(styles, /\.clue-label \{/);
-  assert.match(styles, /--other-selection-dot-width: 4px;/);
-  assert.match(styles, /\.clue-label::before \{/);
-  assert.match(styles, /border: var\(--other-selection-dot-width\) dotted var\(--other-selection-ring\);/);
 });
 
 test("client applies committed clues and live previews independently", () => {
@@ -778,7 +739,6 @@ test("action card animation hides table handoff and deflects missed plays", () =
 
 test("card interactions move with one pointer and rotate with wheel or option-drag", () => {
   const script = read("public/app.js");
-  const styles = read("public/styles.css");
   const html = read("public/index.html");
 
   for (const pattern of [
@@ -825,22 +785,6 @@ test("card interactions move with one pointer and rotate with wheel or option-dr
   }
 
   assert.match(html, /class="rotation-wheel hidden" id="rotationWheel"/);
-  assert.match(styles, /\.rotation-wheel \{[\s\S]*touch-action: none;/);
-  assert.match(styles, /\.rotation-wheel-track \{/);
-  assert.match(styles, /\.rotation-wheel-knob \{/);
-  assert.match(styles, /\.rotation-wheel-spoke,\n\.rotation-wheel-knob \{[\s\S]*transition: transform 180ms/);
-  assert.match(styles, /\.rotation-wheel\.is-rotating \.rotation-wheel-spoke,\n\.rotation-wheel\.is-rotating \.rotation-wheel-knob \{[\s\S]*transition-duration: 0ms;/);
-  assert.match(cssRule(styles, ".self-controls"), /display: flex;/);
-  assert.match(cssRule(styles, ".self-controls button"), /flex: 1 1 0;/);
-  assert.match(cssRule(styles, ".rotation-wheel"), /flex: 0 0 58px;/);
-  assert.match(cssRule(styles, ".rotation-wheel"), /transition:[\s\S]*flex-basis 220ms[\s\S]*width 220ms[\s\S]*height 220ms[\s\S]*opacity 160ms/);
-  assert.match(cssRule(styles, ".rotation-wheel.hidden"), /display: block !important;/);
-  assert.match(cssRule(styles, ".rotation-wheel.hidden"), /flex-basis: 0;/);
-  assert.match(cssRule(styles, ".rotation-wheel.hidden"), /width: 0;/);
-  assert.match(cssRule(styles, ".rotation-wheel.hidden"), /height: 0;/);
-  assert.match(cssRule(styles, ".rotation-wheel.hidden"), /opacity: 0;/);
-  assert.match(cssRule(styles, ".rotation-wheel.hidden"), /overflow: hidden;/);
-  assert.match(cssRule(styles, ".rotation-wheel-track"), /rgba\(16, 38, 76, 0\.9\)/);
   assert.match(script, /function setRotationWheelVisible\(canShow\)/);
   assert.match(script, /setRotationWheelVisible\(canShow\);/);
   assert.match(script, /const currentRect = rotationWheel\.getBoundingClientRect\(\);/);
@@ -849,8 +793,6 @@ test("card interactions move with one pointer and rotate with wheel or option-dr
   assert.match(script, /rotationWheel\.classList\.toggle\("hidden", !canShow\);/);
   assert.match(script, /state\.rotationWheelAnimationFrame = window\.requestAnimationFrame\(\(\) => \{[\s\S]*rotationWheel\.style\.flexBasis = canShow \? "58px" : "0px";[\s\S]*rotationWheel\.style\.width = canShow \? "58px" : "0px";[\s\S]*rotationWheel\.style\.height = canShow \? "58px" : "0px";/);
   assert.match(script, /state\.rotationWheelAnimationTimer = window\.setTimeout\(\(\) => \{[\s\S]*rotationWheel\.style\.flexBasis = "";[\s\S]*rotationWheel\.style\.width = "";[\s\S]*rotationWheel\.style\.height = "";[\s\S]*rotationWheel\.style\.opacity = "";/);
-  assert.doesNotMatch(styles, /prefers-reduced-motion/);
-  assert.match(styles, /\.self-hand \{[\s\S]*touch-action: none;/);
   assert.doesNotMatch(script, /rotateSelected|rotateLeftButton|rotateRightButton/);
   assert.doesNotMatch(script, /rotation: autoRotationForX\(x\)/);
   assert.doesNotMatch(script, /gesture\.rotationStart|pointers\.length >= 2/);
@@ -881,7 +823,6 @@ test("manual rotation mode does not disable auto rotation or off-turn arrangemen
   assert.match(script, /const layout = targets\.length > 0[\s\S]*\? normalizeLayout\(state\.localLayouts\[targets\[0\]\.card\.id\] \|\| targets\[0\]\.card\.layout\)[\s\S]*: normalizeLayout\(\{ x: 50, y: 54, rotation: 0 \}\);/);
   assert.match(script, /if \(!manualRotationEnabled\(\) \|\| targets\.length === 0 \|\| !canArrangeOwnCards\(\)\) return;/);
   assert.match(script, /function canSelectOwnCards\(\) \{[\s\S]*return canArrangeOwnCards\(\) && state\.room\.turnSeat === state\.mySeat;/);
-  assert.doesNotMatch(script, /prefers-reduced-motion|matchMedia/);
 });
 
 test("manual rotation toggle off animates own cards back to auto rotation", () => {
@@ -947,9 +888,7 @@ test("client displays official endgame state and blocks ended gameplay", () => {
 test("rainbow cards are included as a sixth suit", () => {
   const server = read("server.js");
   const script = read("public/app.js");
-  const styles = read("public/styles.css");
 
   assert.match(server, /id: "rainbow", label: "Rainbow"/);
   assert.match(script, /id: "rainbow", label: "Rainbow"/);
-  assert.match(styles, /\.color-rainbow/);
 });

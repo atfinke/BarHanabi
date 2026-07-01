@@ -634,6 +634,57 @@ test("three bombs allow three failed plays before game over", async (t) => {
   assert.equal(blockedAfterEnd.response.status, 400, JSON.stringify(blockedAfterEnd.body));
 });
 
+test("active games keep remaining deck contents redacted", async (t) => {
+  const server = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: { ...process.env, PORT: String(PORT) },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  t.after(() => server.kill("SIGTERM"));
+  await waitForServer(server);
+
+  const room = await createRoom();
+  const state = await readState(room.code, "A");
+
+  assert.equal(state.status, "playing");
+  assert.equal(state.deckCount, 50);
+  assert.equal(Object.hasOwn(state, "remainingDeck"), false);
+});
+
+test("ended games expose remaining deck contents", async (t) => {
+  const server = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: { ...process.env, PORT: String(PORT) },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  t.after(() => server.kill("SIGTERM"));
+  await waitForServer(server);
+
+  const { room, card } = await createRoomWithUnplayableACard({ bombs: 0 });
+  const activeState = await readState(room.code, "A");
+  assert.equal(Object.hasOwn(activeState, "remainingDeck"), false);
+
+  const failedPlay = await postAction({
+    code: room.code,
+    viewerSeat: "A",
+    type: "play",
+    cardId: card.id
+  });
+
+  assert.equal(failedPlay.response.status, 200, JSON.stringify(failedPlay.body));
+  assert.equal(failedPlay.body.status, "ended");
+  assert.equal(failedPlay.body.endReason, "strikes");
+  assert.ok(Array.isArray(failedPlay.body.remainingDeck));
+  assert.equal(failedPlay.body.remainingDeck.length, failedPlay.body.deckCount);
+  assert.deepEqual(
+    Object.keys(failedPlay.body.remainingDeck[0]).sort(),
+    ["color", "id", "rank"]
+  );
+
+  const observedAfterEnd = await readState(room.code, "B");
+  assert.deepEqual(observedAfterEnd.remainingDeck, failedPlay.body.remainingDeck);
+});
+
 test("one bomb allows one failed play before game over", async (t) => {
   const server = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),

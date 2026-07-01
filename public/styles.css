@@ -575,11 +575,37 @@ h2 {
   padding: 0 8px;
 }
 
-.score-strip div {
+.score-strip > * {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+}
+
+.deck-tile {
+  min-width: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+  appearance: none;
+}
+
+.deck-tile:disabled {
+  background: transparent;
+  color: var(--text);
+  opacity: 1;
+}
+
+.deck-tile.is-revealable {
+  cursor: pointer;
+}
+
+.deck-tile.is-revealable:focus-visible {
+  outline: 2px solid rgba(90, 200, 250, 0.72);
+  outline-offset: 4px;
 }
 
 .score-strip span {
@@ -1323,6 +1349,7 @@ h2 {
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.36);
 }
 
+.deck-reveal,
 .clue-chooser,
 .settings-popover {
   position: fixed;
@@ -1339,17 +1366,20 @@ h2 {
   transition: opacity var(--selection-state-duration) var(--selection-state-easing);
 }
 
+.deck-reveal.is-open,
 .clue-chooser.is-open,
 .settings-popover.is-open {
   opacity: 1;
   pointer-events: auto;
 }
 
+.deck-reveal.is-closing,
 .clue-chooser.is-closing,
 .settings-popover.is-closing {
   pointer-events: none;
 }
 
+.deck-reveal-panel,
 .clue-chooser-panel,
 .settings-popover-panel {
   width: min(360px, 100%);
@@ -1365,12 +1395,14 @@ h2 {
     transform var(--selection-state-duration) var(--selection-state-easing);
 }
 
+.deck-reveal.is-open .deck-reveal-panel,
 .clue-chooser.is-open .clue-chooser-panel,
 .settings-popover.is-open .settings-popover-panel {
   opacity: 1;
   transform: translateY(0) scale(1);
 }
 
+.deck-reveal h2,
 .clue-chooser h2,
 .settings-popover h2 {
   margin: 0 0 10px;
@@ -1397,6 +1429,41 @@ h2 {
 .clue-chooser-cancel {
   width: 100%;
   margin-top: 8px;
+}
+
+.deck-reveal-panel {
+  width: max-content;
+  max-width: 100%;
+}
+
+.deck-reveal-title {
+  display: grid;
+  gap: 2px;
+}
+
+.deck-reveal-title p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 750;
+}
+
+.deck-reveal-grid.mini-cards {
+  display: grid;
+  grid-template-columns: repeat(6, 34px);
+  width: max-content;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+  margin: 0 auto;
+  justify-content: center;
+}
+
+.deck-reveal-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 750;
 }
 
 .settings-popover-header {

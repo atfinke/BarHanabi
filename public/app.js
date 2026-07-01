@@ -63,6 +63,7 @@ const state = {
   clueChooserResolve: null,
   settingsPopoverHideTimer: null,
   rotationWheelAnimationFrame: null,
+  deckRevealHideTimer: null,
   rotationWheelAnimationTimer: null
 };
 
@@ -76,6 +77,7 @@ const rainbowSetting = document.querySelector("#rainbowSetting");
 const roomCodeInput = document.querySelector("#roomCodeInput");
 const roomCodeLabel = document.querySelector("#roomCodeLabel");
 const turnStatus = document.querySelector("#turnStatus");
+const deckTile = document.querySelector("#deckTile");
 const deckCount = document.querySelector("#deckCount");
 const bombCount = document.querySelector("#bombCount");
 const hintCount = document.querySelector("#hintCount");
@@ -100,6 +102,10 @@ const toast = document.querySelector("#toast");
 const clueChooser = document.querySelector("#clueChooser");
 const clueChooserOptions = document.querySelector("#clueChooserOptions");
 const clueChooserCancel = document.querySelector("#clueChooserCancel");
+const deckReveal = document.querySelector("#deckReveal");
+const deckRevealGrid = document.querySelector("#deckRevealGrid");
+const deckRevealCount = document.querySelector("#deckRevealCount");
+const deckRevealCloseButton = document.querySelector("#deckRevealCloseButton");
 
 let lastTurnStatusTapAt = 0;
 let lastSeatSwitchPromptAt = 0;
@@ -131,6 +137,7 @@ joinForm.addEventListener("submit", async (event) => {
 turnStatus.addEventListener("click", handleTurnStatusTap);
 turnStatus.addEventListener("keydown", handleTurnStatusKeyDown);
 roomCodeLabel.addEventListener("click", () => copyRoomLink());
+deckTile.addEventListener("click", () => openDeckReveal());
 selfPlayButton.addEventListener("click", () => actionSelected(state.mySeat, "play"));
 selfDiscardButton.addEventListener("click", () => actionSelected(state.mySeat, "discard"));
 clueButton.addEventListener("click", () => giveClue());
@@ -156,8 +163,16 @@ clueChooser.addEventListener("click", (event) => {
     closeClueChooser(null);
   }
 });
+deckRevealCloseButton.addEventListener("click", () => closeDeckReveal());
+deckReveal.addEventListener("click", (event) => {
+  if (event.target === deckReveal) {
+    closeDeckReveal();
+  }
+});
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !clueChooser.classList.contains("hidden")) {
+  if (event.key === "Escape" && !deckReveal.classList.contains("hidden")) {
+    closeDeckReveal();
+  } else if (event.key === "Escape" && !clueChooser.classList.contains("hidden")) {
     closeClueChooser(null);
   } else if (event.key === "Escape" && !settingsPopover.classList.contains("hidden")) {
     closeSettingsPopover();
@@ -407,6 +422,69 @@ function closeSettingsPopover() {
   state.settingsPopoverHideTimer = window.setTimeout(finish, CLUE_CHOOSER_EXIT_MS);
 }
 
+function updateDeckRevealState(room) {
+  if (!room) return;
+  const canRevealDeck = room.status === "ended" && Array.isArray(room.remainingDeck);
+  deckTile.disabled = !canRevealDeck;
+  deckTile.classList.toggle("is-revealable", canRevealDeck);
+  deckTile.setAttribute("aria-expanded", deckReveal.classList.contains("hidden") ? "false" : "true");
+  deckTile.setAttribute("aria-label", canRevealDeck
+    ? `Show remaining deck (${room.remainingDeck.length} ${room.remainingDeck.length === 1 ? "card" : "cards"})`
+    : `Deck (${room.deckCount} ${room.deckCount === 1 ? "card" : "cards"})`);
+  if (canRevealDeck) {
+    renderRemainingDeck(room.remainingDeck);
+  } else {
+    closeDeckReveal({ immediate: true });
+  }
+}
+
+function openDeckReveal() {
+  if (deckTile.disabled || !Array.isArray(state.room?.remainingDeck)) return;
+  renderRemainingDeck(state.room.remainingDeck);
+  window.clearTimeout(state.deckRevealHideTimer);
+  state.deckRevealHideTimer = null;
+  deckReveal.classList.remove("hidden", "is-closing");
+  deckReveal.setAttribute("aria-hidden", "false");
+  deckTile.setAttribute("aria-expanded", "true");
+  requestAnimationFrame(() => {
+    deckReveal.classList.add("is-open");
+    deckRevealCloseButton.focus();
+  });
+}
+
+function closeDeckReveal(options = {}) {
+  if (!deckReveal || deckReveal.classList.contains("hidden")) return;
+  window.clearTimeout(state.deckRevealHideTimer);
+  deckReveal.classList.remove("is-open");
+  deckReveal.classList.add("is-closing");
+  deckReveal.setAttribute("aria-hidden", "true");
+  deckTile.setAttribute("aria-expanded", "false");
+
+  const finish = () => {
+    deckReveal.classList.add("hidden");
+    deckReveal.classList.remove("is-closing");
+    state.deckRevealHideTimer = null;
+  };
+
+  if (options.immediate || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    finish();
+    return;
+  }
+  state.deckRevealHideTimer = window.setTimeout(finish, CLUE_CHOOSER_EXIT_MS);
+}
+
+function renderRemainingDeck(cards) {
+  deckRevealCount.textContent = `${cards.length} ${cards.length === 1 ? "card" : "cards"}`;
+  if (cards.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "deck-reveal-empty";
+    empty.textContent = "No cards left.";
+    deckRevealGrid.replaceChildren(empty);
+    return;
+  }
+  deckRevealGrid.replaceChildren(...cards.map((card) => createMiniCard(card)));
+}
+
 function switchSeat(nextSeat) {
   const normalizedSeat = normalizeSeatOption(nextSeat, state.mySeat);
   if (normalizedSeat === state.mySeat) return;
@@ -602,6 +680,7 @@ function render() {
 
   turnStatus.textContent = turnStatusText(isMyTurn);
   deckCount.textContent = tableRoom.deckCount;
+  updateDeckRevealState(state.room);
   hintCount.textContent = `${tableRoom.hints}/${tableRoom.maxHints}`;
   bombCount.textContent = `${tableRoom.bombs}/${tableRoom.maxBombs}`;
   updateActionButtons();
@@ -622,6 +701,7 @@ function renderActiveDragSafeState() {
   updateRoomCodeLabel(state.room.code);
   turnStatus.textContent = turnStatusText(state.room.turnSeat === state.mySeat);
   deckCount.textContent = tableRoom.deckCount;
+  updateDeckRevealState(state.room);
   hintCount.textContent = `${tableRoom.hints}/${tableRoom.maxHints}`;
   bombCount.textContent = `${tableRoom.bombs}/${tableRoom.maxBombs}`;
   updateActionButtons();
@@ -2322,9 +2402,9 @@ function placeDrawCardOverlay(overlay, rect, scale) {
 }
 
 function deckSourceRect() {
-  const deckTile = deckCount.closest("div");
-  if (!deckTile) return null;
-  return rectSnapshot(deckTile.getBoundingClientRect());
+  const source = deckCount.closest(".deck-tile");
+  if (!source) return null;
+  return rectSnapshot(source.getBoundingClientRect());
 }
 
 function centeredRect(sourceRect, width, height) {
