@@ -205,7 +205,8 @@ test("game settings live in a clue-style popover", () => {
 
   assert.match(styles, /\.clue-chooser,\n\.settings-popover \{/);
   assert.match(styles, /\.clue-chooser-panel,\n\.settings-popover-panel \{/);
-  assert.match(styles, /\.settings-button::before \{/);
+  assert.match(html, /class="settings-icon"[\s\S]*viewBox="0 0 24 24"/);
+  assert.match(styles, /\.settings-icon \{/);
   assert.match(styles, /\.settings-toggle \{/);
 });
 

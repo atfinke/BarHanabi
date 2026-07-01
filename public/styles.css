@@ -414,17 +414,15 @@ h2 {
   box-shadow: none;
 }
 
-.settings-button::before {
-  content: "";
-  width: 18px;
-  height: 18px;
-  border: 3px solid currentColor;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 50%, transparent 0 3px, currentColor 3px 5px, transparent 5px),
-    repeating-conic-gradient(currentColor 0 12deg, transparent 12deg 45deg);
-  -webkit-mask: radial-gradient(circle, transparent 0 3px, #000 3.5px);
-  mask: radial-gradient(circle, transparent 0 3px, #000 3.5px);
+.settings-icon {
+  width: 21px;
+  height: 21px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .settings-close-button::before,
