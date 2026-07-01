@@ -80,9 +80,6 @@ function loadClientForUiStateTest() {
       addEventListener() {},
       location: { hash: "", pathname: "/" },
       history: { replaceState() {} },
-      matchMedia() {
-        return { matches: false };
-      },
       requestAnimationFrame(callback) {
         callback(0);
       },
@@ -764,10 +761,9 @@ test("card interactions move with one pointer and rotate with wheel or option-dr
   assert.match(styles, /\.rotation-wheel-knob \{/);
   assert.match(styles, /\.rotation-wheel-spoke,\n\.rotation-wheel-knob \{[\s\S]*transition: transform 180ms/);
   assert.match(styles, /\.rotation-wheel\.is-rotating \.rotation-wheel-spoke,\n\.rotation-wheel\.is-rotating \.rotation-wheel-knob \{[\s\S]*transition-duration: 0ms;/);
-  assert.match(cssRule(styles, ".rotation-wheel.hidden"), /display: block !important;/);
-  assert.match(styles, /\.rotation-wheel\.hidden \.rotation-wheel-track \{[\s\S]*opacity: 0;[\s\S]*transform: scale\(0\.86\);/);
-  assert.match(cssRule(styles, ".rotation-wheel-track"), /transition:[\s\S]*opacity 160ms[\s\S]*transform 160ms/);
+  assert.match(styles, /\.self-controls\.height-animating \{[\s\S]*overflow: hidden;[\s\S]*transition: height 220ms/);
   assert.match(cssRule(styles, ".rotation-wheel-track"), /rgba\(16, 38, 76, 0\.9\)/);
+  assert.doesNotMatch(styles, /prefers-reduced-motion/);
   assert.match(styles, /\.self-hand \{[\s\S]*touch-action: none;/);
   assert.doesNotMatch(script, /rotateSelected|rotateLeftButton|rotateRightButton/);
   assert.doesNotMatch(script, /rotation: autoRotationForX\(x\)/);
@@ -781,7 +777,13 @@ test("manual rotation mode does not disable auto rotation or off-turn arrangemen
   assert.match(script, /manualRotationToggle\.addEventListener\("change", handleManualRotationToggle\);/);
   assert.match(script, /function normalizeDragLayout\(layout\) \{[\s\S]*const next = normalizeLayout\(layout\);[\s\S]*return manualRotationEnabled\(\)[\s\S]*\? next[\s\S]*: normalizeLayout\(\{ \.\.\.next, rotation: autoRotationForX\(next\.x\) \}\);/);
   assert.match(script, /gesture\.latestLayout = normalizeDragLayout\(layout\);/);
-  assert.match(script, /function handleManualRotationToggle\(\) \{[\s\S]*if \(!manualRotationEnabled\(\)\) \{[\s\S]*animateOwnCardsToAutoRotation\(\);[\s\S]*renderRotationWheel\(\);/);
+  assert.match(script, /function handleManualRotationToggle\(\) \{[\s\S]*animateSelfControlsHeightChange\(\(\) => \{[\s\S]*if \(!manualRotationEnabled\(\)\) \{[\s\S]*animateOwnCardsToAutoRotation\(\);[\s\S]*renderRotationWheel\(\);/);
+  assert.match(script, /function animateSelfControlsHeightChange\(change\)/);
+  assert.match(script, /const startHeight = selfControls\.getBoundingClientRect\(\)\.height;/);
+  assert.match(script, /const endHeight = selfControls\.getBoundingClientRect\(\)\.height;/);
+  assert.match(script, /selfControls\.style\.height = `\$\{startHeight\}px`;/);
+  assert.match(script, /selfControls\.classList\.add\("height-animating"\);/);
+  assert.match(script, /selfControls\.style\.height = `\$\{endHeight\}px`;/);
   assert.match(script, /function animateOwnCardsToAutoRotation\(\)/);
   assert.match(script, /rotation: autoRotationForX\(layout\.x\)/);
   assert.match(script, /startLayoutAnimation\(card\.id, element\);/);
@@ -798,6 +800,7 @@ test("manual rotation mode does not disable auto rotation or off-turn arrangemen
   assert.match(script, /const layout = targets\.length > 0[\s\S]*\? normalizeLayout\(state\.localLayouts\[targets\[0\]\.card\.id\] \|\| targets\[0\]\.card\.layout\)[\s\S]*: normalizeLayout\(\{ x: 50, y: 54, rotation: 0 \}\);/);
   assert.match(script, /if \(!manualRotationEnabled\(\) \|\| targets\.length === 0 \|\| !canArrangeOwnCards\(\)\) return;/);
   assert.match(script, /function canSelectOwnCards\(\) \{[\s\S]*return canArrangeOwnCards\(\) && state\.room\.turnSeat === state\.mySeat;/);
+  assert.doesNotMatch(script, /prefers-reduced-motion|matchMedia/);
 });
 
 test("manual rotation toggle off animates own cards back to auto rotation", () => {

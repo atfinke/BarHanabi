@@ -9,6 +9,7 @@ const ACTION_MOVE_MS = 900;
 const ACTION_SETTLE_MS = 90;
 const CARD_LAYOUT_SYNC_MS = 140;
 const CARD_LAYOUT_ANIMATION_MS = 220;
+const MANUAL_ROTATION_LAYOUT_MS = 220;
 const DISCARD_CARD_WIDTH = 34;
 const DISCARD_CARD_HEIGHT = DISCARD_CARD_WIDTH * 510 / 322;
 const MISPLAY_FIRST_LEG_MS = 760;
@@ -51,7 +52,8 @@ const state = {
   pendingDrawAnimation: null,
   toastTimer: null,
   clueChooserResolve: null,
-  settingsPopoverHideTimer: null
+  settingsPopoverHideTimer: null,
+  selfControlsHeightTimer: null
 };
 
 const setupView = document.querySelector("#setupView");
@@ -75,6 +77,7 @@ const opponentHand = document.querySelector("#opponentHand");
 const selfPlayButton = document.querySelector("#selfPlayButton");
 const selfDiscardButton = document.querySelector("#selfDiscardButton");
 const clueButton = document.querySelector("#clueButton");
+const selfControls = document.querySelector(".self-controls");
 const rotationWheel = document.querySelector("#rotationWheel");
 const settingsButton = document.querySelector("#settingsButton");
 const settingsPopover = document.querySelector("#settingsPopover");
@@ -312,10 +315,6 @@ function closeSettingsPopover() {
     state.settingsPopoverHideTimer = null;
   };
 
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    finish();
-    return;
-  }
   state.settingsPopoverHideTimer = window.setTimeout(finish, CLUE_CHOOSER_EXIT_MS);
 }
 
@@ -989,10 +988,43 @@ function renderRotationWheel() {
 }
 
 function handleManualRotationToggle() {
-  if (!manualRotationEnabled()) {
-    animateOwnCardsToAutoRotation();
+  animateSelfControlsHeightChange(() => {
+    if (!manualRotationEnabled()) {
+      animateOwnCardsToAutoRotation();
+    }
+    renderRotationWheel();
+  });
+}
+
+function animateSelfControlsHeightChange(change) {
+  if (!selfControls) {
+    change();
+    return;
   }
-  renderRotationWheel();
+
+  window.clearTimeout(state.selfControlsHeightTimer);
+  selfControls.classList.remove("height-animating");
+  selfControls.style.height = "";
+
+  const startHeight = selfControls.getBoundingClientRect().height;
+  change();
+  const endHeight = selfControls.getBoundingClientRect().height;
+  if (!Number.isFinite(startHeight) || !Number.isFinite(endHeight) || Math.abs(startHeight - endHeight) < 0.5) {
+    return;
+  }
+
+  selfControls.style.height = `${startHeight}px`;
+  void selfControls.getBoundingClientRect();
+  selfControls.classList.add("height-animating");
+  window.requestAnimationFrame(() => {
+    selfControls.style.height = `${endHeight}px`;
+  });
+
+  state.selfControlsHeightTimer = window.setTimeout(() => {
+    selfControls.classList.remove("height-animating");
+    selfControls.style.height = "";
+    state.selfControlsHeightTimer = null;
+  }, MANUAL_ROTATION_LAYOUT_MS + 40);
 }
 
 function animateOwnCardsToAutoRotation() {
@@ -1948,7 +1980,7 @@ function rectSnapshot(rect) {
 }
 
 function animateActionResult(snapshot) {
-  if (!snapshot || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
+  if (!snapshot) return false;
 
   const path = actionResultPath(snapshot.result);
   if (!path) return false;
@@ -2141,10 +2173,6 @@ function finishActionOverlay(snapshot, overlay) {
 function animateReplacementDraw(snapshot) {
   const replacement = snapshot.replacement;
   if (!replacement) return;
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    clearPendingDrawAnimation(snapshot.key);
-    return;
-  }
 
   const surface = replacement.seat === state.mySeat ? selfHand : opponentHand;
   const targetElement = cardElementById(surface, replacement.card.id);
