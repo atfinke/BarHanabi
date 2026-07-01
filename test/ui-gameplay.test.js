@@ -373,6 +373,22 @@ test("ended deck reveal wires a popover from the deck tile", () => {
   }
 });
 
+test("overlays dismiss on room exit and keep deck tile focus and expanded state accurate", () => {
+  const script = read("public/app.js");
+
+  const leaveRoom = script.match(/function leaveRoom\(message\) \{[\s\S]*?\n\}/)?.[0] || "";
+  assert.ok(leaveRoom, "Missing leaveRoom");
+  assert.match(leaveRoom, /closeDeckReveal\(\{ immediate: true \}\);/);
+  assert.match(leaveRoom, /closeSettingsPopover\(\);/);
+
+  const closeDeckReveal = script.match(/function closeDeckReveal\(options = \{\}\) \{[\s\S]*?\n\}/)?.[0] || "";
+  assert.ok(closeDeckReveal, "Missing closeDeckReveal");
+  assert.match(closeDeckReveal, /if \(deckReveal\.contains\(document\.activeElement\)\) \{\s*deckTile\.focus\(\);/);
+
+  assert.match(script, /const deckRevealCollapsed = deckReveal\.classList\.contains\("hidden"\) \|\| deckReveal\.classList\.contains\("is-closing"\);/);
+  assert.match(script, /deckTile\.setAttribute\("aria-expanded", deckRevealCollapsed \? "false" : "true"\);/);
+});
+
 test("room code control copies the full room share link", () => {
   const html = read("public/index.html");
   const script = read("public/app.js");
