@@ -99,10 +99,19 @@
 
         <section class="table-state">
           <section class="score-strip" aria-label="Game state">
-            <div>
+            <button
+              class="deck-tile"
+              id="deckTile"
+              type="button"
+              aria-label="Deck"
+              aria-controls="deckReveal"
+              aria-expanded="false"
+              aria-haspopup="dialog"
+              disabled
+            >
               <span>Deck</span>
               <strong id="deckCount">0</strong>
-            </div>
+            </button>
             <div>
               <span>Hints</span>
               <strong id="hintCount">8</strong>
@@ -150,6 +159,19 @@
           <h2 id="clueChooserTitle">Choose clue</h2>
           <div class="clue-chooser-options" id="clueChooserOptions"></div>
           <button class="clue-chooser-cancel" type="button" id="clueChooserCancel">Cancel</button>
+        </div>
+      </div>
+
+      <div class="deck-reveal hidden" id="deckReveal" role="dialog" aria-modal="true" aria-labelledby="deckRevealTitle" aria-hidden="true">
+        <div class="deck-reveal-panel">
+          <div class="settings-popover-header deck-reveal-header">
+            <div class="deck-reveal-title">
+              <h2 id="deckRevealTitle">Remaining Deck</h2>
+              <p id="deckRevealCount">0 cards</p>
+            </div>
+            <button class="settings-close-button" type="button" id="deckRevealCloseButton" aria-label="Close deck" title="Close deck"></button>
+          </div>
+          <div class="deck-reveal-grid mini-cards" id="deckRevealGrid" aria-label="Remaining deck cards"></div>
         </div>
       </div>
 
