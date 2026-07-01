@@ -22,6 +22,7 @@ function declarationValue(rule, property) {
 }
 
 function fakeElement() {
+  const listeners = new Map();
   return {
     checked: false,
     disabled: false,
@@ -32,6 +33,7 @@ function fakeElement() {
     offsetWidth: 40,
     offsetHeight: 64,
     textContent: "",
+    value: "",
     classList: {
       add() {},
       remove() {},
@@ -40,7 +42,18 @@ function fakeElement() {
       },
       toggle() {}
     },
-    addEventListener() {},
+    addEventListener(type, listener) {
+      const current = listeners.get(type) || [];
+      current.push(listener);
+      listeners.set(type, current);
+    },
+    dispatchEvent(event) {
+      const payload = typeof event === "string" ? { type: event } : event;
+      for (const listener of listeners.get(payload.type) || []) {
+        listener(payload);
+      }
+      return true;
+    },
     append() {},
     replaceChildren() {},
     remove() {},
@@ -54,8 +67,9 @@ function fakeElement() {
   };
 }
 
-function loadClientForUiStateTest() {
+function loadClientForUiStateTest(options = {}) {
   const elements = new Map();
+  const storage = new Map(Object.entries(options.storage || {}));
   const document = {
     querySelector(selector) {
       if (!elements.has(selector)) {
@@ -103,10 +117,15 @@ function loadClientForUiStateTest() {
       }
     },
     localStorage: {
-      getItem() {
-        return null;
+      getItem(key) {
+        return storage.has(key) ? storage.get(key) : null;
       },
-      setItem() {}
+      setItem(key, value) {
+        storage.set(key, String(value));
+      },
+      removeItem(key) {
+        storage.delete(key);
+      }
     },
     URLSearchParams,
     requestAnimationFrame(callback) {
@@ -118,10 +137,10 @@ function loadClientForUiStateTest() {
   };
 
   vm.runInNewContext(
-    `${read("public/app.js")}\nglobalThis.__client = { state, applyRoomState, tableDisplayRoom, updateActionButtons, updateRoomCodeLabel, roomCodeLabel, selfPlayButton, selfDiscardButton, selfHand, opponentHand };`,
+    `${read("public/app.js")}\nglobalThis.__client = { state, applyRoomState, tableDisplayRoom, updateActionButtons, updateRoomCodeLabel, roomCodeLabel, selfPlayButton, selfDiscardButton, selfHand, opponentHand, hintSetting, bombSetting, rainbowSetting, autoClueToggle, manualRotationToggle, readSetupSettings };`,
     sandbox
   );
-  return sandbox.__client;
+  return { ...sandbox.__client, storage };
 }
 
 function visibleCardElement(cardId) {
@@ -161,6 +180,55 @@ test("setup screen exposes compact game settings controls", () => {
   ]) {
     assert.match(html, pattern);
   }
+});
+
+test("client restores local player preferences on load", () => {
+  const client = loadClientForUiStateTest({
+    storage: {
+      "barHanabiPreferences:v1": JSON.stringify({
+        hints: 4,
+        bombs: 1,
+        rainbow: false,
+        autoClue: true,
+        manualRotation: true
+      }),
+      "barHanabiSeat:ABCD": "B"
+    }
+  });
+
+  assert.equal(client.hintSetting.value, "4");
+  assert.equal(client.bombSetting.value, "1");
+  assert.equal(client.rainbowSetting.checked, false);
+  assert.equal(client.autoClueToggle.checked, true);
+  assert.equal(client.manualRotationToggle.checked, true);
+  const setupSettings = client.readSetupSettings();
+  assert.equal(setupSettings.hints, 4);
+  assert.equal(setupSettings.bombs, 1);
+  assert.equal(setupSettings.rainbow, false);
+  assert.equal(client.storage.get("barHanabiSeat:ABCD"), "B");
+});
+
+test("client saves local player preferences when controls change", () => {
+  const client = loadClientForUiStateTest();
+  client.hintSetting.value = "6";
+  client.bombSetting.value = "0";
+  client.rainbowSetting.checked = false;
+  client.autoClueToggle.checked = true;
+  client.manualRotationToggle.checked = true;
+
+  client.hintSetting.dispatchEvent("change");
+  client.bombSetting.dispatchEvent("change");
+  client.rainbowSetting.dispatchEvent("change");
+  client.autoClueToggle.dispatchEvent("change");
+  client.manualRotationToggle.dispatchEvent("change");
+
+  assert.deepEqual(JSON.parse(client.storage.get("barHanabiPreferences:v1")), {
+    hints: 6,
+    bombs: 0,
+    rainbow: false,
+    autoClue: true,
+    manualRotation: true
+  });
 });
 
 test("setup screen uses softened browser chrome and wider mobile gutters", () => {
