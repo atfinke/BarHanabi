@@ -120,6 +120,7 @@ selfPlayButton.addEventListener("click", () => actionSelected(state.mySeat, "pla
 selfDiscardButton.addEventListener("click", () => actionSelected(state.mySeat, "discard"));
 verbalClueButton.addEventListener("click", () => giveVerbalClue());
 rotationWheel.addEventListener("pointerdown", handleRotationWheelPointerDown);
+manualRotationToggle.addEventListener("change", () => renderRotationWheel());
 settingsButton.addEventListener("click", () => toggleSettingsPopover());
 settingsCloseButton.addEventListener("click", () => closeSettingsPopover());
 settingsPopover.addEventListener("click", (event) => {
@@ -803,7 +804,7 @@ function bindCardPointer(element, surface, player, card, options) {
 
     gesture.pointers.set(event.pointerId, pointerSnapshot(event));
     resetGestureBaseline();
-    if (event.altKey && gesture.pointers.size === 1) {
+    if (manualRotationEnabled() && event.altKey && gesture.pointers.size === 1) {
       gesture.optionRotating = true;
     }
   });
@@ -855,7 +856,7 @@ function bindCardPointer(element, surface, player, card, options) {
 
     const pointers = [...gesture.pointers.values()];
     if (pointers.length === 1 && gesture.moveStart) {
-      if (moveEvent.altKey) {
+      if (manualRotationEnabled() && moveEvent.altKey) {
         if (!gesture.optionRotating || !gesture.optionRotationStart) {
           gesture.layout = normalizeLayout(gesture.latestLayout);
           gesture.optionRotationStart = optionRotationStartFor(pointers[0], gesture.layout, gesture.rect);
@@ -938,7 +939,7 @@ function bindCardPointer(element, surface, player, card, options) {
 
 function renderRotationWheel() {
   const targets = selectedOwnLayoutTargets();
-  const canShow = targets.length > 0 && canSelectOwnCards();
+  const canShow = manualRotationEnabled() && targets.length > 0 && canSelectOwnCards();
   rotationWheel.classList.toggle("hidden", !canShow);
   rotationWheel.setAttribute("aria-hidden", canShow ? "false" : "true");
   if (!canShow) return;
@@ -949,7 +950,7 @@ function renderRotationWheel() {
 
 function handleRotationWheelPointerDown(event) {
   const targets = selectedOwnLayoutTargets();
-  if (targets.length === 0 || !canSelectOwnCards()) return;
+  if (!manualRotationEnabled() || targets.length === 0 || !canSelectOwnCards()) return;
 
   event.preventDefault();
   rotationWheel.setPointerCapture(event.pointerId);
@@ -1048,6 +1049,10 @@ function handleRotationWheelPointerDown(event) {
   rotationWheel.addEventListener("pointermove", onPointerMove);
   rotationWheel.addEventListener("pointerup", onPointerUp);
   rotationWheel.addEventListener("pointercancel", onPointerCancel);
+}
+
+function manualRotationEnabled() {
+  return manualRotationToggle.checked;
 }
 
 function selectedOwnLayoutTargets() {
