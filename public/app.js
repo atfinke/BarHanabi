@@ -413,6 +413,9 @@ function closePopover({ element, trigger, timerKey, immediate = false, onFinish 
   element.classList.add("is-closing");
   element.setAttribute("aria-hidden", "true");
   trigger?.setAttribute("aria-expanded", "false");
+  if (element.contains(document.activeElement)) {
+    trigger?.focus();
+  }
 
   const finish = () => {
     element.classList.add("hidden");
@@ -450,7 +453,8 @@ function updateDeckRevealState(room) {
   const canRevealDeck = room.status === "ended" && Array.isArray(room.remainingDeck);
   deckTile.disabled = !canRevealDeck;
   deckTile.classList.toggle("is-revealable", canRevealDeck);
-  deckTile.setAttribute("aria-expanded", deckReveal.classList.contains("hidden") ? "false" : "true");
+  const deckRevealCollapsed = deckReveal.classList.contains("hidden") || deckReveal.classList.contains("is-closing");
+  deckTile.setAttribute("aria-expanded", deckRevealCollapsed ? "false" : "true");
   deckTile.setAttribute("aria-label", canRevealDeck
     ? `Show remaining deck (${room.remainingDeck.length} ${room.remainingDeck.length === 1 ? "card" : "cards"})`
     : `Deck (${room.deckCount} ${room.deckCount === 1 ? "card" : "cards"})`);
@@ -520,6 +524,8 @@ function leaveRoom(message) {
   state.seenCardIds.clear();
   resetLocalSelections();
   state.hasRenderedRoom = false;
+  closeDeckReveal({ immediate: true });
+  closeSettingsPopover();
   setupView.classList.remove("hidden");
   gameView.classList.add("hidden");
   if (window.location.hash) {
