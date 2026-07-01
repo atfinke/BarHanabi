@@ -764,6 +764,9 @@ test("card interactions move with one pointer and rotate with wheel or option-dr
   assert.match(styles, /\.rotation-wheel-knob \{/);
   assert.match(styles, /\.rotation-wheel-spoke,\n\.rotation-wheel-knob \{[\s\S]*transition: transform 180ms/);
   assert.match(styles, /\.rotation-wheel\.is-rotating \.rotation-wheel-spoke,\n\.rotation-wheel\.is-rotating \.rotation-wheel-knob \{[\s\S]*transition-duration: 0ms;/);
+  assert.match(cssRule(styles, ".rotation-wheel.hidden"), /display: block !important;/);
+  assert.match(styles, /\.rotation-wheel\.hidden \.rotation-wheel-track \{[\s\S]*opacity: 0;[\s\S]*transform: scale\(0\.86\);/);
+  assert.match(cssRule(styles, ".rotation-wheel-track"), /transition:[\s\S]*opacity 160ms[\s\S]*transform 160ms/);
   assert.match(cssRule(styles, ".rotation-wheel-track"), /rgba\(16, 38, 76, 0\.9\)/);
   assert.match(styles, /\.self-hand \{[\s\S]*touch-action: none;/);
   assert.doesNotMatch(script, /rotateSelected|rotateLeftButton|rotateRightButton/);
