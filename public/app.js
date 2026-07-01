@@ -319,7 +319,7 @@ function reconnectCurrentRoom() {
 function applyRoomState(nextRoom) {
   const previousTableRoom = tableDisplayRoom();
   const deferRenderForDrag = Boolean(state.activeDrag);
-  const animation = deferRenderForDrag ? null : actionAnimationSnapshot(nextRoom);
+  const animation = canAnimateActionResultWithActiveDrag(nextRoom) ? actionAnimationSnapshot(nextRoom) : null;
   fadeRetiredResultHighlight(previousTableRoom, nextRoom);
   if (animation && previousTableRoom) {
     if (animation.replacement) {
@@ -339,6 +339,10 @@ function applyRoomState(nextRoom) {
   setConnection(true);
   if (deferRenderForDrag) {
     state.pendingRoom = state.room;
+    if (animation && !animateActionResult(animation)) {
+      releaseTableStateHold(animation.key);
+      clearPendingDrawAnimation(animation.key);
+    }
     return;
   }
   render();
@@ -463,6 +467,30 @@ function render() {
   markSeenCards();
 }
 
+function renderActiveDragSafeState() {
+  if (!state.room) return;
+
+  const tableRoom = tableDisplayRoom();
+  updateRoomCodeLabel(state.room.code);
+  turnStatus.textContent = turnStatusText(state.room.turnSeat === state.mySeat);
+  deckCount.textContent = tableRoom.deckCount;
+  hintCount.textContent = `${tableRoom.hints}/${tableRoom.maxHints}`;
+  bombCount.textContent = `${tableRoom.bombs}/${tableRoom.maxBombs}`;
+  updateActionButtons();
+
+  renderFireworks(tableRoom);
+  if (state.activeDrag?.seat !== state.mySeat) {
+    renderHand(selfHand, playerForSeat(state.mySeat), { concealed: true, movable: true });
+  }
+  if (state.activeDrag?.seat !== opponentSeat()) {
+    renderHand(opponentHand, playerForSeat(opponentSeat()), { concealed: false, movable: false, animateLayout: true });
+  }
+  renderRotationWheel();
+  renderClueLabels();
+  renderDiscard(tableRoom);
+  markSeenCards();
+}
+
 function tableDisplayRoom() {
   return state.tableStateHold?.room || state.room;
 }
@@ -478,7 +506,12 @@ function releaseTableStateHold(key) {
   if (!state.tableStateHold || state.tableStateHold.key !== key) return;
   state.tableStateHold = null;
   if (state.room) {
-    render();
+    if (state.activeDrag) {
+      state.pendingRoom = state.room;
+      renderActiveDragSafeState();
+    } else {
+      render();
+    }
   }
 }
 
@@ -1717,6 +1750,15 @@ function actionAnimationSnapshot(nextRoom) {
   };
 }
 
+function canAnimateActionResultWithActiveDrag(nextRoom) {
+  if (!state.activeDrag) return true;
+  if (state.tableStateHold) return false;
+
+  const result = nextRoom?.lastResult;
+  if (!result?.actorSeat || !result.cardId) return false;
+  return result.actorSeat !== state.activeDrag.seat;
+}
+
 function replacementCardSnapshot(nextRoom, result) {
   const previousPlayer = state.room?.players.find((player) => player.seat === result.actorSeat);
   const nextPlayer = nextRoom?.players.find((player) => player.seat === result.actorSeat);
@@ -2048,7 +2090,12 @@ function clearPendingDrawAnimation(key, options = {}) {
   if (key && state.pendingDrawAnimation.key !== key) return;
   state.pendingDrawAnimation = null;
   if (options.update !== false && state.room) {
-    render();
+    if (state.activeDrag) {
+      state.pendingRoom = state.room;
+      renderActiveDragSafeState();
+    } else {
+      render();
+    }
   }
 }
 
