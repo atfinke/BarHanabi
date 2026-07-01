@@ -103,7 +103,7 @@ test("custom setup settings shape room state and survive reset", async (t) => {
   assert.equal("rainbow" in reset.body.fireworks, false);
 });
 
-test("setup settings are sanitized conservatively", async (t) => {
+test("reset alternates the starting player while preserving setup settings", async (t) => {
   const server = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
     env: { ...process.env, PORT: String(PORT + 1) },
@@ -111,6 +111,51 @@ test("setup settings are sanitized conservatively", async (t) => {
   });
   t.after(() => server.kill("SIGTERM"));
   const base = baseUrl(PORT + 1);
+  await waitForServer(server, base);
+
+  const room = await createRoom(base, { hints: 4, bombs: 1, rainbow: false });
+  const initial = await readState(base, room.code, "A");
+  assert.equal(initial.turnSeat, "A");
+
+  const firstReset = await postAction(base, {
+    code: room.code,
+    viewerSeat: "A",
+    type: "reset"
+  });
+
+  assert.equal(firstReset.response.status, 200, JSON.stringify(firstReset.body));
+  assert.equal(firstReset.body.turnSeat, "B");
+  assert.equal(firstReset.body.maxHints, 4);
+  assert.equal(firstReset.body.maxBombs, 1);
+  assert.equal(firstReset.body.maxScore, 25);
+
+  const secondReset = await postAction(base, {
+    code: room.code,
+    viewerSeat: "B",
+    type: "reset"
+  });
+
+  assert.equal(secondReset.response.status, 200, JSON.stringify(secondReset.body));
+  assert.equal(secondReset.body.turnSeat, "A");
+
+  const thirdReset = await postAction(base, {
+    code: room.code,
+    viewerSeat: "A",
+    type: "reset"
+  });
+
+  assert.equal(thirdReset.response.status, 200, JSON.stringify(thirdReset.body));
+  assert.equal(thirdReset.body.turnSeat, "B");
+});
+
+test("setup settings are sanitized conservatively", async (t) => {
+  const server = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: { ...process.env, PORT: String(PORT + 2) },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  t.after(() => server.kill("SIGTERM"));
+  const base = baseUrl(PORT + 2);
   await waitForServer(server, base);
 
   const room = await createRoom(base, { hints: 99, bombs: -1, rainbow: "nope" });
@@ -127,11 +172,11 @@ test("setup settings are sanitized conservatively", async (t) => {
 test("setup allows zero bombs for no-mistake games", async (t) => {
   const server = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
-    env: { ...process.env, PORT: String(PORT + 2) },
+    env: { ...process.env, PORT: String(PORT + 3) },
     stdio: ["ignore", "pipe", "pipe"]
   });
   t.after(() => server.kill("SIGTERM"));
-  const base = baseUrl(PORT + 2);
+  const base = baseUrl(PORT + 3);
   await waitForServer(server, base);
 
   const room = await createRoom(base, { bombs: 0 });
