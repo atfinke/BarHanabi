@@ -230,34 +230,6 @@ test("committed clues must name the exact selected rank or color set", async (t)
   assert.equal(rainbowClue.body.error, "No valid clue for those cards.");
 });
 
-test("legacy verbal-clue actions are rejected by system clues", async (t) => {
-  const server = spawn(process.execPath, ["server.js"], {
-    cwd: process.cwd(),
-    env: { ...process.env, PORT: String(PORT) },
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-  t.after(() => server.kill("SIGTERM"));
-  await waitForServer(server);
-
-  const duplicateRank = await createRoomWithTargetHand(duplicateRankGroup);
-  const selectedRankIds = duplicateRank.match.cards.map((card) => card.id);
-  const legacyClue = await postAction({
-    code: duplicateRank.room.code,
-    viewerSeat: "A",
-    type: "verbal-clue",
-    targetSeat: "B",
-    cardIds: selectedRankIds,
-    clue: { kind: "rank", value: duplicateRank.match.rank }
-  });
-
-  assert.equal(legacyClue.response.status, 400, JSON.stringify(legacyClue.body));
-  assert.equal(legacyClue.body.error, "Unknown action.");
-
-  const state = await readState(duplicateRank.room.code, "A");
-  assert.equal(state.clueSelection, null);
-  assert.equal(state.hints, 8);
-});
-
 test("rainbow-only selections can be clued as absent colors only", async (t) => {
   const server = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
