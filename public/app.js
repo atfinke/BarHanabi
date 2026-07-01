@@ -59,6 +59,9 @@ const state = {
   fireworkRenderKey: "",
   tableStateHold: null,
   pendingDrawAnimation: null,
+  pendingBombAnimationKey: "",
+  lastAnimatedBombKey: "",
+  bombAnimationTimer: null,
   toastTimer: null,
   clueChooserResolve: null,
   settingsPopoverHideTimer: null,
@@ -564,6 +567,7 @@ function applyRoomState(nextRoom) {
   const previousTableRoom = tableDisplayRoom();
   const deferRenderForDrag = Boolean(state.activeDrag);
   const animation = canAnimateActionResultWithActiveDrag(nextRoom) ? actionAnimationSnapshot(nextRoom) : null;
+  queueBombAnimation(state.room, nextRoom);
   fadeRetiredResultHighlight(previousTableRoom, nextRoom);
   if (animation && previousTableRoom) {
     if (animation.replacement) {
@@ -700,7 +704,7 @@ function render() {
   deckCount.textContent = tableRoom.deckCount;
   updateDeckRevealState(state.room);
   hintCount.textContent = `${tableRoom.hints}/${tableRoom.maxHints}`;
-  bombCount.textContent = `${tableRoom.bombs}/${tableRoom.maxBombs}`;
+  updateBombCount(tableRoom);
   updateActionButtons();
 
   renderFireworks(tableRoom);
@@ -721,7 +725,7 @@ function renderActiveDragSafeState() {
   deckCount.textContent = tableRoom.deckCount;
   updateDeckRevealState(state.room);
   hintCount.textContent = `${tableRoom.hints}/${tableRoom.maxHints}`;
-  bombCount.textContent = `${tableRoom.bombs}/${tableRoom.maxBombs}`;
+  updateBombCount(tableRoom);
   updateActionButtons();
 
   renderFireworks(tableRoom);
@@ -739,6 +743,40 @@ function renderActiveDragSafeState() {
 
 function tableDisplayRoom() {
   return state.tableStateHold?.room || state.room;
+}
+
+function queueBombAnimation(previousRoom, nextRoom) {
+  if (!previousRoom || !nextRoom) return;
+  if (nextRoom.bombs <= previousRoom.bombs) return;
+  state.pendingBombAnimationKey = bombAnimationKey(nextRoom);
+}
+
+function updateBombCount(tableRoom) {
+  bombCount.textContent = `${tableRoom.bombs}/${tableRoom.maxBombs}`;
+  if (tableRoom !== state.room) return;
+  if (!state.pendingBombAnimationKey) return;
+  if (state.pendingBombAnimationKey === state.lastAnimatedBombKey) return;
+
+  state.lastAnimatedBombKey = state.pendingBombAnimationKey;
+  state.pendingBombAnimationKey = "";
+  restartBombCountAnimation();
+}
+
+function bombAnimationKey(room) {
+  return `${room.code}:${room.version}:${room.bombs}`;
+}
+
+function restartBombCountAnimation() {
+  if (state.bombAnimationTimer) {
+    window.clearTimeout(state.bombAnimationTimer);
+  }
+  bombCount.classList.remove("is-bomb-hit");
+  bombCount.offsetWidth;
+  bombCount.classList.add("is-bomb-hit");
+  state.bombAnimationTimer = window.setTimeout(() => {
+    bombCount.classList.remove("is-bomb-hit");
+    state.bombAnimationTimer = null;
+  }, 540);
 }
 
 function holdTableStateForAnimation(key, room) {

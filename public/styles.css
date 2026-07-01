@@ -619,6 +619,10 @@ h2 {
   letter-spacing: 0;
 }
 
+.score-strip strong.is-bomb-hit {
+  animation: bomb-count-hit 540ms cubic-bezier(0.18, 0.89, 0.32, 1.28) both;
+}
+
 .fireworks {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(48px, 1fr));
@@ -1017,6 +1021,24 @@ h2 {
   to {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+@keyframes bomb-count-hit {
+  0% {
+    color: var(--text);
+    transform: scale(1);
+    text-shadow: none;
+  }
+  38% {
+    color: var(--danger);
+    transform: scale(1.32);
+    text-shadow: 0 0 18px rgba(255, 55, 95, 0.58);
+  }
+  100% {
+    color: var(--text);
+    transform: scale(1);
+    text-shadow: none;
   }
 }
 
