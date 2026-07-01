@@ -594,6 +594,8 @@ h2 {
 }
 
 .deck-tile:disabled {
+  background: transparent;
+  color: var(--text);
   opacity: 1;
 }
 
