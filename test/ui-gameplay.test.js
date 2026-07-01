@@ -373,6 +373,19 @@ test("ended deck reveal wires a popover from the deck tile", () => {
   }
 });
 
+test("unchanged deck reveal contents are not rebuilt across renders", () => {
+  const script = read("public/app.js");
+
+  assert.match(script, /const renderKey = \[state\.room\.code, \.\.\.cards\.map\(\(card\) => card\.id\)\]\.join\("\|"\);/);
+  assert.match(script, /if \(renderKey === state\.deckRevealRenderKey\) return;/);
+  assert.match(script, /state\.deckRevealRenderKey = renderKey;/);
+  assert.match(script, /state\.deckRevealRenderKey = null;/);
+
+  const openDeckReveal = script.match(/function openDeckReveal\(\) \{[\s\S]*?\n\}/)?.[0] || "";
+  assert.ok(openDeckReveal, "Missing openDeckReveal");
+  assert.doesNotMatch(openDeckReveal, /renderRemainingDeck\(/);
+});
+
 test("room code control copies the full room share link", () => {
   const html = read("public/index.html");
   const script = read("public/app.js");

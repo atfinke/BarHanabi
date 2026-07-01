@@ -64,6 +64,7 @@ const state = {
   settingsPopoverHideTimer: null,
   rotationWheelAnimationFrame: null,
   deckRevealHideTimer: null,
+  deckRevealRenderKey: null,
   rotationWheelAnimationTimer: null
 };
 
@@ -440,7 +441,6 @@ function updateDeckRevealState(room) {
 
 function openDeckReveal() {
   if (deckTile.disabled || !Array.isArray(state.room?.remainingDeck)) return;
-  renderRemainingDeck(state.room.remainingDeck);
   window.clearTimeout(state.deckRevealHideTimer);
   state.deckRevealHideTimer = null;
   deckReveal.classList.remove("hidden", "is-closing");
@@ -474,6 +474,10 @@ function closeDeckReveal(options = {}) {
 }
 
 function renderRemainingDeck(cards) {
+  const renderKey = [state.room.code, ...cards.map((card) => card.id)].join("|");
+  if (renderKey === state.deckRevealRenderKey) return;
+  state.deckRevealRenderKey = renderKey;
+
   deckRevealCount.textContent = `${cards.length} ${cards.length === 1 ? "card" : "cards"}`;
   if (cards.length === 0) {
     const empty = document.createElement("p");
@@ -505,6 +509,7 @@ function leaveRoom(message) {
   }
   state.currentCode = null;
   state.room = null;
+  state.deckRevealRenderKey = null;
   state.seenCardIds.clear();
   resetLocalSelections();
   state.hasRenderedRoom = false;
