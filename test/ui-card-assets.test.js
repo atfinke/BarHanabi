@@ -11,8 +11,9 @@ test("card art assets are wired through the client", () => {
   assert.match(script, /card-back-art/);
 });
 
-test("full-size cards stay visually blank until image assets load", () => {
+test("card images reveal only after assets load", () => {
   const script = fs.readFileSync("public/app.js", "utf8");
+
   assert.doesNotMatch(script, /card-asset-fallback/);
 
   assert.match(script, /function revealCardImageWhenReady/);
