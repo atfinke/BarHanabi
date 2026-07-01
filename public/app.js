@@ -7,6 +7,7 @@ const CLUE_LABEL_EXIT_MS = 180;
 const CLUE_CHOOSER_EXIT_MS = 180;
 const ACTION_MOVE_MS = 900;
 const ACTION_SETTLE_MS = 90;
+const CARD_LAYOUT_SYNC_MS = 140;
 const DISCARD_CARD_WIDTH = 34;
 const DISCARD_CARD_HEIGHT = DISCARD_CARD_WIDTH * 510 / 322;
 const MISPLAY_FIRST_LEG_MS = 760;
@@ -70,6 +71,7 @@ const opponentHand = document.querySelector("#opponentHand");
 const selfPlayButton = document.querySelector("#selfPlayButton");
 const selfDiscardButton = document.querySelector("#selfDiscardButton");
 const verbalClueButton = document.querySelector("#verbalClueButton");
+const rotationWheel = document.querySelector("#rotationWheel");
 const autoClueToggle = document.querySelector("#autoCluePreviewToggle");
 const resetButton = document.querySelector("#resetButton");
 const neededDiscardPile = document.querySelector("#neededDiscardPile");
@@ -112,6 +114,7 @@ roomCodeLabel.addEventListener("click", () => copyRoomLink());
 selfPlayButton.addEventListener("click", () => actionSelected(state.mySeat, "play"));
 selfDiscardButton.addEventListener("click", () => actionSelected(state.mySeat, "discard"));
 verbalClueButton.addEventListener("click", () => giveVerbalClue());
+rotationWheel.addEventListener("pointerdown", handleRotationWheelPointerDown);
 clueChooserCancel.addEventListener("click", () => closeClueChooser(null));
 clueChooser.addEventListener("click", (event) => {
   if (event.target === clueChooser) {
@@ -453,6 +456,7 @@ function render() {
   renderFireworks(tableRoom);
   renderHand(selfHand, me, { concealed: true, movable: true });
   renderHand(opponentHand, other, { concealed: false, movable: false, animateLayout: true });
+  renderRotationWheel();
   renderClueLabels();
   renderDiscard(tableRoom);
   markSeenCards();
@@ -756,7 +760,6 @@ function bindCardPointer(element, surface, player, card, options) {
       surfaceSize: { width: rect.width, height: rect.height },
       pointers: new Map([[event.pointerId, pointerSnapshot(event)]]),
       moveStart: pointerSnapshot(event),
-      rotationStart: null,
       optionRotationStart: null,
       optionRotating: false,
       initialLayout: layout,
@@ -774,18 +777,12 @@ function bindCardPointer(element, surface, player, card, options) {
     gesture.moveStart = pointers[0] || null;
     gesture.optionRotationStart = optionRotationStartFor(pointers[0], gesture.layout, gesture.rect);
     gesture.optionRotating = false;
-    gesture.rotationStart = pointers.length >= 2
-      ? {
-          angle: pointerAngle(pointers[0], pointers[1]),
-          layout: gesture.layout
-        }
-      : null;
   }
 
   function sendMove(force) {
     if (!gesture) return;
     const now = Date.now();
-    if (!force && now - gesture.lastSyncAt < 140) return;
+    if (!force && now - gesture.lastSyncAt < CARD_LAYOUT_SYNC_MS) return;
     gesture.lastSyncAt = now;
     scheduleAction({
       type: "move-card",
@@ -801,15 +798,6 @@ function bindCardPointer(element, surface, player, card, options) {
     gesture.pointers.set(moveEvent.pointerId, pointerSnapshot(moveEvent));
 
     const pointers = [...gesture.pointers.values()];
-    if (pointers.length >= 2 && gesture.rotationStart) {
-      const delta = angleDelta(pointerAngle(pointers[0], pointers[1]), gesture.rotationStart.angle);
-      updateGestureLayout({
-        ...gesture.rotationStart.layout,
-        rotation: gesture.rotationStart.layout.rotation + delta
-      });
-      return;
-    }
-
     if (pointers.length === 1 && gesture.moveStart) {
       if (moveEvent.altKey) {
         if (!gesture.optionRotating || !gesture.optionRotationStart) {
@@ -845,10 +833,7 @@ function bindCardPointer(element, surface, player, card, options) {
     if (!gesture) return;
     gesture.latestLayout = normalizeLayout(layout);
     gesture.moved = true;
-    card.layout = gesture.latestLayout;
-    rememberLocalLayout(card.id, gesture.latestLayout);
-    element.classList.remove("layout-animating");
-    applyLayout(element, gesture.latestLayout, gesture.surfaceSize);
+    applyCardLayoutUpdate(surface, card, gesture.latestLayout, gesture.surfaceSize);
     sendMove(false);
   }
 
@@ -895,10 +880,156 @@ function bindCardPointer(element, surface, player, card, options) {
   }
 }
 
+function renderRotationWheel() {
+  const targets = selectedOwnLayoutTargets();
+  const canShow = targets.length > 0 && canSelectOwnCards();
+  rotationWheel.classList.toggle("hidden", !canShow);
+  rotationWheel.setAttribute("aria-hidden", canShow ? "false" : "true");
+  if (!canShow) return;
+
+  const layout = normalizeLayout(state.localLayouts[targets[0].card.id] || targets[0].card.layout);
+  setRotationWheelAngle(layout.rotation);
+}
+
+function handleRotationWheelPointerDown(event) {
+  const targets = selectedOwnLayoutTargets();
+  if (targets.length === 0 || !canSelectOwnCards()) return;
+
+  event.preventDefault();
+  rotationWheel.setPointerCapture(event.pointerId);
+
+  const wheelRect = rotationWheel.getBoundingClientRect();
+  const center = rectCenter(wheelRect);
+  const startAngle = pointerAngle(center, pointerSnapshot(event));
+  const surfaceSize = surfaceSizeFor(selfHand);
+  const gesture = {
+    pointerId: event.pointerId,
+    center,
+    startAngle,
+    lastSyncAt: 0,
+    moved: false,
+    targets: targets.map(({ card }) => ({
+      card,
+      layout: normalizeLayout(state.localLayouts[card.id] || card.layout)
+    })),
+    latestTargets: []
+  };
+  gesture.latestTargets = gesture.targets.map(({ card, layout }) => ({ card, layout }));
+  state.activeDrag = { seat: state.mySeat, cardId: "rotation-wheel" };
+
+  function sendRotation(force) {
+    const now = Date.now();
+    if (!force && now - gesture.lastSyncAt < CARD_LAYOUT_SYNC_MS) return;
+    gesture.lastSyncAt = now;
+    gesture.latestTargets.forEach(({ card, layout }) => {
+      scheduleAction({
+        type: "move-card",
+        seat: state.mySeat,
+        cardId: card.id,
+        ...layout
+      });
+    });
+  }
+
+  function applyRotation(pointer) {
+    const delta = angleDelta(pointerAngle(gesture.center, pointer), gesture.startAngle);
+    gesture.moved = true;
+    gesture.latestTargets = gesture.targets.map(({ card, layout }) => ({
+      card,
+      layout: normalizeLayout({
+        ...layout,
+        rotation: layout.rotation + delta
+      })
+    }));
+
+    gesture.latestTargets.forEach(({ card, layout }) => {
+      applyCardLayoutUpdate(selfHand, card, layout, surfaceSize);
+    });
+    setRotationWheelAngle(gesture.latestTargets[0].layout.rotation);
+    sendRotation(false);
+  }
+
+  function finishRotation(shouldCommit) {
+    rotationWheel.removeEventListener("pointermove", onPointerMove);
+    rotationWheel.removeEventListener("pointerup", onPointerUp);
+    rotationWheel.removeEventListener("pointercancel", onPointerCancel);
+    releaseCardPointer(rotationWheel, gesture.pointerId);
+    state.activeDrag = null;
+
+    if (!shouldCommit) {
+      gesture.targets.forEach(({ card, layout }) => {
+        applyCardLayoutUpdate(selfHand, card, layout, surfaceSize);
+      });
+      setRotationWheelAngle(gesture.targets[0].layout.rotation);
+    } else {
+      if (gesture.moved) {
+        sendRotation(true);
+      }
+    }
+
+    if (state.pendingRoom) {
+      state.pendingRoom = null;
+      render();
+    }
+  }
+
+  function onPointerMove(moveEvent) {
+    if (moveEvent.pointerId !== gesture.pointerId) return;
+    moveEvent.preventDefault();
+    applyRotation(pointerSnapshot(moveEvent));
+  }
+
+  function onPointerUp(upEvent) {
+    if (upEvent.pointerId !== gesture.pointerId) return;
+    finishRotation(true);
+  }
+
+  function onPointerCancel(cancelEvent) {
+    if (cancelEvent.pointerId !== gesture.pointerId) return;
+    finishRotation(false);
+  }
+
+  rotationWheel.addEventListener("pointermove", onPointerMove);
+  rotationWheel.addEventListener("pointerup", onPointerUp);
+  rotationWheel.addEventListener("pointercancel", onPointerCancel);
+}
+
+function selectedOwnLayoutTargets() {
+  const player = playerForSeat(state.mySeat);
+  if (!player) return [];
+  const selectedIds = new Set(selectedCardIds(state.mySeat));
+  return player.hand
+    .filter((card) => selectedIds.has(card.id))
+    .map((card) => ({ card }));
+}
+
+function applyCardLayoutUpdate(surface, card, layout, surfaceSize = surfaceSizeFor(surface)) {
+  const next = normalizeLayout(layout);
+  card.layout = next;
+  rememberLocalLayout(card.id, next);
+  const element = cardElementById(surface, card.id);
+  if (element) {
+    element.classList.remove("layout-animating");
+    applyLayout(element, next, surfaceSize);
+  }
+  return next;
+}
+
+function setRotationWheelAngle(rotation) {
+  rotationWheel.style.setProperty("--rotation-wheel-angle", `${normalizeLayout({ rotation, x: 50, y: 54 }).rotation}deg`);
+}
+
 function pointerSnapshot(event) {
   return {
     x: event.clientX,
     y: event.clientY
+  };
+}
+
+function rectCenter(rect) {
+  return {
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2
   };
 }
 
@@ -1155,6 +1286,7 @@ function updateSelectionClasses() {
     element.style.zIndex = String(10 + index + (isSelected ? 100 : 0));
   });
   updateActionButtons();
+  renderRotationWheel();
 }
 
 function syncCardSelectionClasses(element, isOwnSelected, isOtherSelected) {
