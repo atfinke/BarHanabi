@@ -712,9 +712,14 @@ function cardBackAssetPath() {
 }
 
 function bindCardPointer(element, surface, player, card, options) {
+  let gesture = null;
+
   element.addEventListener("pointerdown", (event) => {
     if (options.concealed) {
-      selectCard(player.seat, card.id);
+      const joiningGesture = gesture && state.activeDrag?.seat === player.seat && state.activeDrag?.cardId === card.id;
+      if (!joiningGesture) {
+        selectCard(player.seat, card.id);
+      }
     } else {
       if (!canSelectOpponentCards()) return;
       selectCard(player.seat, card.id, { multi: true });
@@ -727,83 +732,208 @@ function bindCardPointer(element, surface, player, card, options) {
 
     event.preventDefault();
     element.setPointerCapture(event.pointerId);
+    if (!gesture) {
+      gesture = startCardGesture(event);
+      state.activeDrag = { seat: player.seat, cardId: card.id };
+      element.classList.remove("layout-animating");
+      element.addEventListener("pointermove", onPointerMove);
+      element.addEventListener("pointerup", onPointerUp);
+      element.addEventListener("pointercancel", onPointerCancel);
+    }
 
+    gesture.pointers.set(event.pointerId, pointerSnapshot(event));
+    resetGestureBaseline();
+    if (event.altKey && gesture.pointers.size === 1) {
+      gesture.optionRotating = true;
+    }
+  });
+
+  function startCardGesture(event) {
     const rect = surface.getBoundingClientRect();
-    const surfaceSize = { width: rect.width, height: rect.height };
-    const startLayout = normalizeLayout(state.localLayouts[card.id] || card.layout);
-    const start = {
-      x: event.clientX,
-      y: event.clientY,
-      layout: startLayout,
+    const layout = normalizeLayout(state.localLayouts[card.id] || card.layout);
+    return {
+      rect,
+      surfaceSize: { width: rect.width, height: rect.height },
+      pointers: new Map([[event.pointerId, pointerSnapshot(event)]]),
+      moveStart: pointerSnapshot(event),
+      rotationStart: null,
+      optionRotationStart: null,
+      optionRotating: false,
+      initialLayout: layout,
+      layout,
+      latestLayout: layout,
       moved: false,
       lastSyncAt: 0
     };
-    let latestLayout = startLayout;
-    state.activeDrag = { seat: player.seat, cardId: card.id };
-    element.classList.remove("layout-animating");
+  }
 
-    function sendMove(force) {
-      const now = Date.now();
-      if (!force && now - start.lastSyncAt < 140) return;
-      start.lastSyncAt = now;
-      scheduleAction({
-        type: "move-card",
-        seat: player.seat,
-        cardId: card.id,
-        ...latestLayout
+  function resetGestureBaseline() {
+    if (!gesture) return;
+    const pointers = [...gesture.pointers.values()];
+    gesture.layout = normalizeLayout(gesture.latestLayout);
+    gesture.moveStart = pointers[0] || null;
+    gesture.optionRotationStart = optionRotationStartFor(pointers[0], gesture.layout, gesture.rect);
+    gesture.optionRotating = false;
+    gesture.rotationStart = pointers.length >= 2
+      ? {
+          angle: pointerAngle(pointers[0], pointers[1]),
+          layout: gesture.layout
+        }
+      : null;
+  }
+
+  function sendMove(force) {
+    if (!gesture) return;
+    const now = Date.now();
+    if (!force && now - gesture.lastSyncAt < 140) return;
+    gesture.lastSyncAt = now;
+    scheduleAction({
+      type: "move-card",
+      seat: player.seat,
+      cardId: card.id,
+      ...gesture.latestLayout
+    });
+  }
+
+  function onPointerMove(moveEvent) {
+    if (!gesture || !gesture.pointers.has(moveEvent.pointerId)) return;
+    moveEvent.preventDefault();
+    gesture.pointers.set(moveEvent.pointerId, pointerSnapshot(moveEvent));
+
+    const pointers = [...gesture.pointers.values()];
+    if (pointers.length >= 2 && gesture.rotationStart) {
+      const delta = angleDelta(pointerAngle(pointers[0], pointers[1]), gesture.rotationStart.angle);
+      updateGestureLayout({
+        ...gesture.rotationStart.layout,
+        rotation: gesture.rotationStart.layout.rotation + delta
+      });
+      return;
+    }
+
+    if (pointers.length === 1 && gesture.moveStart) {
+      if (moveEvent.altKey) {
+        if (!gesture.optionRotating || !gesture.optionRotationStart) {
+          gesture.layout = normalizeLayout(gesture.latestLayout);
+          gesture.optionRotationStart = optionRotationStartFor(pointers[0], gesture.layout, gesture.rect);
+          gesture.optionRotating = true;
+        }
+        const delta = angleDelta(pointerAngle(gesture.optionRotationStart.center, pointers[0]), gesture.optionRotationStart.angle);
+        updateGestureLayout({
+          ...gesture.optionRotationStart.layout,
+          rotation: gesture.optionRotationStart.layout.rotation + delta
+        });
+        return;
+      }
+
+      if (gesture.optionRotating) {
+        gesture.layout = normalizeLayout(gesture.latestLayout);
+        gesture.moveStart = pointers[0];
+        gesture.optionRotating = false;
+      }
+
+      const dx = ((pointers[0].x - gesture.moveStart.x) / gesture.rect.width) * 100;
+      const dy = ((pointers[0].y - gesture.moveStart.y) / gesture.rect.height) * 100;
+      updateGestureLayout({
+        x: gesture.layout.x + dx,
+        y: gesture.layout.y + dy,
+        rotation: gesture.layout.rotation
       });
     }
+  }
 
-    function onPointerMove(moveEvent) {
-      const dx = ((moveEvent.clientX - start.x) / rect.width) * 100;
-      const dy = ((moveEvent.clientY - start.y) / rect.height) * 100;
-      const x = clamp(start.layout.x + dx, 12, 88);
-      const y = clamp(start.layout.y + dy, 24, 76);
-      latestLayout = {
-        x,
-        y,
-        rotation: autoRotationForX(x)
-      };
-      start.moved = true;
-      card.layout = latestLayout;
-      rememberLocalLayout(card.id, latestLayout);
-      element.classList.remove("layout-animating");
-      applyLayout(element, latestLayout, surfaceSize);
-      sendMove(false);
+  function updateGestureLayout(layout) {
+    if (!gesture) return;
+    gesture.latestLayout = normalizeLayout(layout);
+    gesture.moved = true;
+    card.layout = gesture.latestLayout;
+    rememberLocalLayout(card.id, gesture.latestLayout);
+    element.classList.remove("layout-animating");
+    applyLayout(element, gesture.latestLayout, gesture.surfaceSize);
+    sendMove(false);
+  }
+
+  function finishGesture(shouldCommit) {
+    if (!gesture) return;
+    const startLayout = gesture.initialLayout;
+    const moved = gesture.moved;
+    const surfaceSize = gesture.surfaceSize;
+    element.removeEventListener("pointermove", onPointerMove);
+    element.removeEventListener("pointerup", onPointerUp);
+    element.removeEventListener("pointercancel", onPointerCancel);
+    state.activeDrag = null;
+
+    if (!shouldCommit) {
+      card.layout = startLayout;
+      rememberLocalLayout(card.id, startLayout);
+      applyLayout(element, startLayout, surfaceSize);
+    } else if (moved) {
+      sendMove(true);
     }
 
-    function finishDrag(shouldCommit) {
-      element.removeEventListener("pointermove", onPointerMove);
-      element.removeEventListener("pointerup", onPointerUp);
-      element.removeEventListener("pointercancel", onPointerCancel);
-      state.activeDrag = null;
-
-      if (!shouldCommit) {
-        card.layout = startLayout;
-        rememberLocalLayout(card.id, startLayout);
-        applyLayout(element, startLayout, surfaceSize);
-      } else if (start.moved) {
-        sendMove(true);
-      }
-
-      if (state.pendingRoom) {
-        state.pendingRoom = null;
-        render();
-      }
+    gesture = null;
+    if (state.pendingRoom) {
+      state.pendingRoom = null;
+      render();
     }
+  }
 
-    function onPointerUp() {
-      finishDrag(true);
+  function onPointerUp(event) {
+    if (!gesture || !gesture.pointers.has(event.pointerId)) return;
+    gesture.pointers.delete(event.pointerId);
+    releaseCardPointer(element, event.pointerId);
+    if (gesture.pointers.size === 0) {
+      finishGesture(true);
+    } else {
+      resetGestureBaseline();
     }
+  }
 
-    function onPointerCancel() {
-      finishDrag(false);
-    }
+  function onPointerCancel(event) {
+    if (!gesture || !gesture.pointers.has(event.pointerId)) return;
+    releaseCardPointer(element, event.pointerId);
+    finishGesture(false);
+  }
+}
 
-    element.addEventListener("pointermove", onPointerMove);
-    element.addEventListener("pointerup", onPointerUp);
-    element.addEventListener("pointercancel", onPointerCancel);
-  });
+function pointerSnapshot(event) {
+  return {
+    x: event.clientX,
+    y: event.clientY
+  };
+}
+
+function optionRotationStartFor(pointer, layout, surfaceRect) {
+  if (!pointer) return null;
+  const center = cardCenterForLayout(layout, surfaceRect);
+  return {
+    center,
+    angle: pointerAngle(center, pointer),
+    layout
+  };
+}
+
+function cardCenterForLayout(layout, surfaceRect) {
+  return {
+    x: surfaceRect.left + (surfaceRect.width * layout.x) / 100,
+    y: surfaceRect.top + (surfaceRect.height * layout.y) / 100
+  };
+}
+
+function releaseCardPointer(element, pointerId) {
+  if (element.hasPointerCapture?.(pointerId)) {
+    element.releasePointerCapture(pointerId);
+  }
+}
+
+function pointerAngle(first, second) {
+  return (Math.atan2(second.y - first.y, second.x - first.x) * 180) / Math.PI;
+}
+
+function angleDelta(current, start) {
+  let delta = current - start;
+  while (delta > 180) delta -= 360;
+  while (delta < -180) delta += 360;
+  return delta;
 }
 
 function cardElementById(surface, cardId) {

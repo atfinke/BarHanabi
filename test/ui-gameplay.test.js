@@ -464,15 +464,31 @@ test("action card animation hides table handoff and deflects missed plays", () =
   assert.match(script, /overlay\.remove\(\);[\s\S]*releaseTableStateHold\(snapshot\.key\);[\s\S]*window\.requestAnimationFrame\(\(\) => \{[\s\S]*animateReplacementDraw\(snapshot\);[\s\S]*\}\);/);
 });
 
-test("card interactions auto-rotate during drag without gesture controls", () => {
+test("card interactions move with one pointer and rotate with touch or option-drag", () => {
   const script = read("public/app.js");
   const styles = read("public/styles.css");
 
   for (const pattern of [
     /function bindCardPointer/,
-    /function autoRotationForX/,
-    /rotation: autoRotationForX\(x\)/,
-    /const clampedX = clamp\(x, 12, 88\)/,
+    /const joiningGesture = gesture && state\.activeDrag\?\.seat === player\.seat && state\.activeDrag\?\.cardId === card\.id;/,
+    /pointers: new Map\(\[\[event\.pointerId, pointerSnapshot\(event\)\]\]\)/,
+    /function pointerSnapshot\(event\)/,
+    /function optionRotationStartFor\(pointer, layout, surfaceRect\)/,
+    /function cardCenterForLayout\(layout, surfaceRect\)/,
+    /function pointerAngle\(first, second\)/,
+    /function angleDelta\(current, start\)/,
+    /rotation: gesture\.layout\.rotation/,
+    /rotation: gesture\.rotationStart\.layout\.rotation \+ delta/,
+    /if \(event\.altKey && gesture\.pointers\.size === 1\)/,
+    /if \(moveEvent\.altKey\)/,
+    /pointerAngle\(gesture\.optionRotationStart\.center, pointers\[0\]\)/,
+    /rotation: gesture\.optionRotationStart\.layout\.rotation \+ delta/,
+    /x: surfaceRect\.left \+ \(surfaceRect\.width \* layout\.x\) \/ 100/,
+    /y: surfaceRect\.top \+ \(surfaceRect\.height \* layout\.y\) \/ 100/,
+    /rememberLocalLayout\(card\.id, gesture\.latestLayout\);/,
+    /sendMove\(false\);/,
+    /sendMove\(true\);/,
+    /type: "move-card"/,
     /const rotation = Number\.isFinite\(Number\(next\.rotation\)\) \? Number\(next\.rotation\) : autoRotationForX\(clampedX\)/,
     /rotation: clamp\(rotation, -145, 145\)/
   ]) {
@@ -481,7 +497,8 @@ test("card interactions auto-rotate during drag without gesture controls", () =>
 
   assert.match(styles, /\.self-hand \{[\s\S]*touch-action: none;/);
   assert.doesNotMatch(script, /rotateSelected|rotateLeftButton|rotateRightButton/);
-  assert.doesNotMatch(script, /handPointers|rotationGesture|gesturestart|gesturechange|gestureend|gesturecancel|GestureEvent|event\.rotation|angleDelta/);
+  assert.doesNotMatch(script, /rotation: autoRotationForX\(x\)/);
+  assert.doesNotMatch(script, /gesturestart|gesturechange|gestureend|gesturecancel|GestureEvent|event\.rotation/);
 });
 
 test("client displays official endgame state and blocks ended gameplay", () => {
