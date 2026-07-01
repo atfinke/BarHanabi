@@ -72,6 +72,18 @@ async function createRoomWithUnplayableACard(settings) {
   throw new Error("Could not create a room with an unplayable A card.");
 }
 
+async function createRoomWithUnplayableCardsForBoth(settings) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const room = await createRoom(settings);
+    const stateA = await readState(room.code, "A");
+    const stateB = await readState(room.code, "B");
+    const aCard = playerForSeat(stateB, "A").hand.find((item) => item.rank !== 1);
+    const bCard = playerForSeat(stateA, "B").hand.find((item) => item.rank !== 1);
+    if (aCard && bCard) return { room, aCard, bCard };
+  }
+  throw new Error("Could not create a room with unplayable cards for both players.");
+}
+
 async function createRoom(settings) {
   return fetch(`${BASE}/api/rooms`, {
     method: "POST",
@@ -152,6 +164,24 @@ async function discardFirstCard(code, state) {
     type: "discard",
     cardId: player.hand[0].id
   });
+}
+
+async function takeTurnPreferringFailedPlay(code, state) {
+  const activeSeat = state.turnSeat;
+  const observerSeat = activeSeat === "A" ? "B" : "A";
+  const observerState = await readState(code, observerSeat);
+  const activeHand = playerForSeat(observerState, activeSeat).hand;
+  const unplayable = activeHand.find((card) => card.rank !== state.fireworks[card.color] + 1);
+  const actionCard = unplayable || playerForSeat(state, activeSeat).hand[0];
+  const actionResult = await postAction({
+    code,
+    viewerSeat: activeSeat,
+    type: unplayable ? "play" : "discard",
+    cardId: actionCard.id
+  });
+
+  assert.equal(actionResult.response.status, 200, JSON.stringify(actionResult.body));
+  return actionResult.body;
 }
 
 async function spendTwoHintsAndReturnToA(code, aCardId) {
@@ -572,7 +602,7 @@ test("drawing the last deck card starts one final turn per player", async (t) =>
   assert.equal(blockedAfterEnd.response.status, 400, JSON.stringify(blockedAfterEnd.body));
 });
 
-test("third failed play ends the game immediately", async (t) => {
+test("three bombs allow three failed plays before game over", async (t) => {
   const server = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
     env: { ...process.env, PORT: String(PORT) },
@@ -585,29 +615,58 @@ test("third failed play ends the game immediately", async (t) => {
   let state = await readState(room.code, "A");
 
   while (state.bombs < 3) {
-    const activeSeat = state.turnSeat;
-    const observerSeat = activeSeat === "A" ? "B" : "A";
-    const observerState = await readState(room.code, observerSeat);
-    const activeHand = playerForSeat(observerState, activeSeat).hand;
-    const unplayable = activeHand.find((card) => card.rank !== state.fireworks[card.color] + 1);
-    const actionCard = unplayable || playerForSeat(state, activeSeat).hand[0];
-    const actionType = unplayable ? "play" : "discard";
-    const actionResult = await postAction({
-      code: room.code,
-      viewerSeat: activeSeat,
-      type: actionType,
-      cardId: actionCard.id
-    });
-
-    assert.equal(actionResult.response.status, 200, JSON.stringify(actionResult.body));
-    state = actionResult.body;
+    state = await takeTurnPreferringFailedPlay(room.code, state);
   }
 
-  assert.equal(state.status, "ended");
+  assert.equal(state.status, "playing");
+  assert.equal(state.endReason, null);
+
+  for (let attempts = 0; state.status !== "ended" && attempts < 30; attempts += 1) {
+    state = await takeTurnPreferringFailedPlay(room.code, state);
+  }
+
+  assert.equal(state.bombs, 3);
   assert.equal(state.endReason, "strikes");
 
   const blockedAfterEnd = await discardFirstCard(room.code, state);
   assert.equal(blockedAfterEnd.response.status, 400, JSON.stringify(blockedAfterEnd.body));
+});
+
+test("one bomb allows one failed play before game over", async (t) => {
+  const server = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: { ...process.env, PORT: String(PORT) },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  t.after(() => server.kill("SIGTERM"));
+  await waitForServer(server);
+
+  const { room, aCard, bCard } = await createRoomWithUnplayableCardsForBoth({ bombs: 1 });
+  const firstFailedPlay = await postAction({
+    code: room.code,
+    viewerSeat: "A",
+    type: "play",
+    cardId: aCard.id
+  });
+
+  assert.equal(firstFailedPlay.response.status, 200, JSON.stringify(firstFailedPlay.body));
+  assert.equal(firstFailedPlay.body.maxBombs, 1);
+  assert.equal(firstFailedPlay.body.bombs, 1);
+  assert.equal(firstFailedPlay.body.status, "playing");
+  assert.equal(firstFailedPlay.body.endReason, null);
+
+  const secondFailedPlay = await postAction({
+    code: room.code,
+    viewerSeat: "B",
+    type: "play",
+    cardId: bCard.id
+  });
+
+  assert.equal(secondFailedPlay.response.status, 200, JSON.stringify(secondFailedPlay.body));
+  assert.equal(secondFailedPlay.body.maxBombs, 1);
+  assert.equal(secondFailedPlay.body.bombs, 1);
+  assert.equal(secondFailedPlay.body.status, "ended");
+  assert.equal(secondFailedPlay.body.endReason, "strikes");
 });
 
 test("zero bombs ends the game on the first failed play", async (t) => {

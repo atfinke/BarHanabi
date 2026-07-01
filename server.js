@@ -637,6 +637,7 @@ function handleAction(room, action) {
     const card = takeCard(player, action);
     const nextRank = room.fireworks[card.color] + 1;
     let message = "";
+    let exceededBombAllowance = false;
 
     if (card.rank === nextRank) {
       room.fireworks[card.color] = card.rank;
@@ -646,7 +647,9 @@ function handleAction(room, action) {
     } else {
       room.discard.push(card);
       room.lastResult = actionResult("discard", "play", player, card);
-      room.bombs = clamp(room.bombs + 1, 0, room.settings.maxBombs);
+      const nextBombs = room.bombs + 1;
+      exceededBombAllowance = nextBombs > room.settings.maxBombs;
+      room.bombs = clamp(nextBombs, 0, room.settings.maxBombs);
       message = `${player.name} missed with ${cardName(card)}.`;
     }
 
@@ -661,7 +664,7 @@ function handleAction(room, action) {
       return room;
     }
 
-    if (room.bombs >= room.settings.maxBombs) {
+    if (exceededBombAllowance) {
       addLog(room, message);
       endGame(room, "strikes");
       touch(room);
