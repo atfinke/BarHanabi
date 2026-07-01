@@ -56,6 +56,8 @@ function fakeElement() {
 
 function loadClientForUiStateTest() {
   const elements = new Map();
+  const scheduledActions = [];
+  const animationTimers = [];
   const document = {
     querySelector(selector) {
       if (!elements.has(selector)) {
@@ -85,6 +87,7 @@ function loadClientForUiStateTest() {
         callback(0);
       },
       setTimeout() {
+        animationTimers.push(true);
         return 1;
       },
       clearTimeout() {},
@@ -112,13 +115,21 @@ function loadClientForUiStateTest() {
     requestAnimationFrame(callback) {
       callback(0);
     },
-    setTimeout,
+    getComputedStyle() {
+      return { transform: "none" };
+    },
+    setTimeout(callback) {
+      scheduledActions.push(callback);
+      return scheduledActions.length;
+    },
     clearTimeout,
-    console
+    console,
+    scheduledActions,
+    animationTimers
   };
 
   vm.runInNewContext(
-    `${read("public/app.js")}\nglobalThis.__client = { state, applyRoomState, tableDisplayRoom, updateActionButtons, updateRoomCodeLabel, roomCodeLabel, selfPlayButton, selfDiscardButton, selfHand, opponentHand };`,
+    `${read("public/app.js")}\nglobalThis.__client = { state, applyRoomState, tableDisplayRoom, updateActionButtons, updateRoomCodeLabel, roomCodeLabel, selfPlayButton, selfDiscardButton, selfHand, opponentHand, manualRotationToggle, handleManualRotationToggle, renderHand, autoRotationForX, scheduledActions, animationTimers };`,
     sandbox
   );
   return sandbox.__client;
@@ -131,6 +142,52 @@ function visibleCardElement(cardId) {
     offsetHeight: 64,
     getBoundingClientRect() {
       return { left: 12, top: 24, width: 40, height: 64 };
+    }
+  };
+}
+
+function layoutCardElement(cardId) {
+  const classes = new Set(["table-card"]);
+  const styleProps = {};
+  const events = [];
+  return {
+    dataset: { cardId },
+    children: [],
+    events,
+    styleProps,
+    style: {
+      transform: "",
+      setProperty(name, value) {
+        events.push(`style:${name}`);
+        styleProps[name] = value;
+      }
+    },
+    classList: {
+      add(name) {
+        events.push(`class:add:${name}`);
+        classes.add(name);
+      },
+      remove(name) {
+        events.push(`class:remove:${name}`);
+        classes.delete(name);
+      },
+      contains(name) {
+        return classes.has(name);
+      },
+      toggle(name, force) {
+        if (force) {
+          classes.add(name);
+        } else {
+          classes.delete(name);
+        }
+      }
+    },
+    replaceChildren(...nextChildren) {
+      this.children = nextChildren;
+    },
+    getBoundingClientRect() {
+      events.push("layout:flush");
+      return { left: 0, top: 0, width: 100, height: 100 };
     }
   };
 }
@@ -718,9 +775,19 @@ test("card interactions move with one pointer and rotate with wheel or option-dr
 test("manual rotation mode does not disable auto rotation or off-turn arrangement", () => {
   const script = read("public/app.js");
 
-  assert.match(script, /manualRotationToggle\.addEventListener\("change", \(\) => renderRotationWheel\(\)\);/);
+  assert.match(script, /manualRotationToggle\.addEventListener\("change", handleManualRotationToggle\);/);
   assert.match(script, /function normalizeDragLayout\(layout\) \{[\s\S]*const next = normalizeLayout\(layout\);[\s\S]*return manualRotationEnabled\(\)[\s\S]*\? next[\s\S]*: normalizeLayout\(\{ \.\.\.next, rotation: autoRotationForX\(next\.x\) \}\);/);
   assert.match(script, /gesture\.latestLayout = normalizeDragLayout\(layout\);/);
+  assert.match(script, /function handleManualRotationToggle\(\) \{[\s\S]*if \(!manualRotationEnabled\(\)\) \{[\s\S]*animateOwnCardsToAutoRotation\(\);[\s\S]*renderRotationWheel\(\);/);
+  assert.match(script, /function animateOwnCardsToAutoRotation\(\)/);
+  assert.match(script, /rotation: autoRotationForX\(layout\.x\)/);
+  assert.match(script, /startLayoutAnimation\(card\.id, element\);/);
+  assert.match(script, /function startLayoutAnimation\(cardId, element\)/);
+  assert.match(script, /state\.layoutAnimationCardIds\[cardId\] = true;/);
+  assert.match(script, /void element\.getBoundingClientRect\(\);/);
+  assert.match(script, /function clearLayoutAnimation\(cardId\)/);
+  assert.match(script, /applyLayout\(element, next, surfaceSize\);/);
+  assert.match(script, /element\.classList\.toggle\("layout-animating", canAnimateLayout \|\| isOwnLayoutAnimating\);/);
   assert.match(script, /function canArrangeOwnCards\(\) \{[\s\S]*return state\.room && state\.room\.status !== "ended";/);
   assert.match(script, /if \(!canArrangeOwnCards\(\)\) \{/);
   assert.match(script, /const isOwnSelected = player\.seat === state\.mySeat && isLocallySelected && canArrangeOwnCards\(\);/);
@@ -728,6 +795,53 @@ test("manual rotation mode does not disable auto rotation or off-turn arrangemen
   assert.match(script, /const layout = targets\.length > 0[\s\S]*\? normalizeLayout\(state\.localLayouts\[targets\[0\]\.card\.id\] \|\| targets\[0\]\.card\.layout\)[\s\S]*: normalizeLayout\(\{ x: 50, y: 54, rotation: 0 \}\);/);
   assert.match(script, /if \(!manualRotationEnabled\(\) \|\| targets\.length === 0 \|\| !canArrangeOwnCards\(\)\) return;/);
   assert.match(script, /function canSelectOwnCards\(\) \{[\s\S]*return canArrangeOwnCards\(\) && state\.room\.turnSeat === state\.mySeat;/);
+});
+
+test("manual rotation toggle off animates own cards back to auto rotation", () => {
+  const client = loadClientForUiStateTest();
+  const manualCard = { id: "manual-card", layout: { x: 20, y: 50, rotation: 90 } };
+  const autoCard = { id: "auto-card", layout: { x: 70, y: 50, rotation: client.autoRotationForX(70) } };
+  const manualElement = layoutCardElement(manualCard.id);
+  const autoElement = layoutCardElement(autoCard.id);
+
+  client.state.mySeat = "A";
+  client.state.room = {
+    status: "playing",
+    turnSeat: "B",
+    players: [
+      { seat: "A", hand: [manualCard, autoCard] },
+      { seat: "B", hand: [] }
+    ]
+  };
+  client.state.localLayouts = {
+    [manualCard.id]: { ...manualCard.layout },
+    [autoCard.id]: { ...autoCard.layout }
+  };
+  client.selfHand.querySelectorAll = () => [manualElement, autoElement];
+  client.manualRotationToggle.checked = false;
+
+  client.handleManualRotationToggle();
+
+  const expectedManualRotation = client.autoRotationForX(manualCard.layout.x);
+  assert.equal(manualCard.layout.rotation, expectedManualRotation);
+  assert.equal(client.state.localLayouts[manualCard.id].rotation, expectedManualRotation);
+  assert.equal(manualElement.dataset.layoutRotation, String(expectedManualRotation));
+  assert.equal(manualElement.styleProps["--card-layout-rotation"], `${expectedManualRotation}deg`);
+  assert.equal(manualElement.classList.contains("layout-animating"), true);
+  assert.deepEqual(manualElement.events.slice(0, 3), [
+    "class:add:layout-animating",
+    "layout:flush",
+    "style:--card-layout-x"
+  ]);
+  client.selfHand.children = [manualElement, autoElement];
+  client.selfHand.insertBefore = () => {};
+  client.renderHand(client.selfHand, client.state.room.players[0], { concealed: true, movable: true });
+  assert.equal(manualElement.classList.contains("layout-animating"), true);
+
+  assert.equal(autoCard.layout.rotation, client.autoRotationForX(autoCard.layout.x));
+  assert.equal(autoElement.classList.contains("layout-animating"), false);
+  assert.equal(client.scheduledActions.length, 1);
+  assert.equal(client.animationTimers.length, 1);
 });
 
 test("client displays official endgame state and blocks ended gameplay", () => {

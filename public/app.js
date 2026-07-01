@@ -8,6 +8,7 @@ const CLUE_CHOOSER_EXIT_MS = 180;
 const ACTION_MOVE_MS = 900;
 const ACTION_SETTLE_MS = 90;
 const CARD_LAYOUT_SYNC_MS = 140;
+const CARD_LAYOUT_ANIMATION_MS = 220;
 const DISCARD_CARD_WIDTH = 34;
 const DISCARD_CARD_HEIGHT = DISCARD_CARD_WIDTH * 510 / 322;
 const MISPLAY_FIRST_LEG_MS = 760;
@@ -32,6 +33,8 @@ const state = {
   selectionExitKinds: {},
   selectionExitTimers: {},
   localLayouts: {},
+  layoutAnimationCardIds: {},
+  layoutAnimationTimers: {},
   appliedClueSelectionKey: "",
   activeDrag: null,
   pendingAction: false,
@@ -120,7 +123,7 @@ selfPlayButton.addEventListener("click", () => actionSelected(state.mySeat, "pla
 selfDiscardButton.addEventListener("click", () => actionSelected(state.mySeat, "discard"));
 clueButton.addEventListener("click", () => giveClue());
 rotationWheel.addEventListener("pointerdown", handleRotationWheelPointerDown);
-manualRotationToggle.addEventListener("change", () => renderRotationWheel());
+manualRotationToggle.addEventListener("change", handleManualRotationToggle);
 settingsButton.addEventListener("click", () => toggleSettingsPopover());
 settingsCloseButton.addEventListener("click", () => closeSettingsPopover());
 settingsPopover.addEventListener("click", (event) => {
@@ -686,6 +689,7 @@ function renderHand(surface, player, options) {
     const localLayout = player.seat === state.mySeat ? state.localLayouts[card.id] : null;
     const targetLayout = normalizeLayout(localLayout || card.layout || fallbackLayout(index));
     const previousLayout = previousLayouts.get(card.id);
+    const isOwnLayoutAnimating = player.seat === state.mySeat && Boolean(state.layoutAnimationCardIds[card.id]);
     const canAnimateLayout = options.animateLayout === true && player.seat !== state.mySeat;
     const shouldAnimateLayout = canAnimateLayout && previousLayout && !layoutsEqual(previousLayout, targetLayout);
     if (!existingElement) {
@@ -699,7 +703,7 @@ function renderHand(surface, player, options) {
       element.classList.add(`color-${card.color}`);
     }
     syncCardSelectionClasses(element, isOwnSelected, isOtherSelected);
-    element.classList.toggle("layout-animating", canAnimateLayout);
+    element.classList.toggle("layout-animating", canAnimateLayout || isOwnLayoutAnimating);
     element.classList.toggle("draw-pending", isPendingDraw);
     element.dataset.seat = player.seat;
     element.dataset.cardId = card.id;
@@ -982,6 +986,66 @@ function renderRotationWheel() {
     ? normalizeLayout(state.localLayouts[targets[0].card.id] || targets[0].card.layout)
     : normalizeLayout({ x: 50, y: 54, rotation: 0 });
   setRotationWheelAngle(layout.rotation);
+}
+
+function handleManualRotationToggle() {
+  if (!manualRotationEnabled()) {
+    animateOwnCardsToAutoRotation();
+  }
+  renderRotationWheel();
+}
+
+function animateOwnCardsToAutoRotation() {
+  if (!canArrangeOwnCards()) return;
+
+  const player = playerForSeat(state.mySeat);
+  if (!player) return;
+
+  const surfaceSize = surfaceSizeFor(selfHand);
+  player.hand.forEach((card) => {
+    const layout = normalizeLayout(state.localLayouts[card.id] || card.layout);
+    const next = normalizeLayout({
+      ...layout,
+      rotation: autoRotationForX(layout.x)
+    });
+    if (layoutsEqual(layout, next)) return;
+
+    card.layout = next;
+    rememberLocalLayout(card.id, next);
+
+    const element = cardElementById(selfHand, card.id);
+    if (element) {
+      startLayoutAnimation(card.id, element);
+      applyLayout(element, next, surfaceSize);
+    }
+
+    scheduleAction({
+      type: "move-card",
+      seat: state.mySeat,
+      cardId: card.id,
+      ...next
+    }, { silent: true });
+  });
+}
+
+function startLayoutAnimation(cardId, element) {
+  state.layoutAnimationCardIds[cardId] = true;
+  window.clearTimeout(state.layoutAnimationTimers[cardId]);
+  element.classList.add("layout-animating");
+  void element.getBoundingClientRect();
+  state.layoutAnimationTimers[cardId] = window.setTimeout(() => {
+    clearLayoutAnimation(cardId);
+  }, CARD_LAYOUT_ANIMATION_MS);
+}
+
+function clearLayoutAnimation(cardId) {
+  window.clearTimeout(state.layoutAnimationTimers[cardId]);
+  delete state.layoutAnimationCardIds[cardId];
+  delete state.layoutAnimationTimers[cardId];
+  const element = cardElementById(selfHand, cardId);
+  if (element) {
+    element.classList.remove("layout-animating");
+  }
 }
 
 function handleRotationWheelPointerDown(event) {
