@@ -8,6 +8,7 @@ const CLUE_CHOOSER_EXIT_MS = 180;
 const ACTION_MOVE_MS = 900;
 const ACTION_SETTLE_MS = 90;
 const CARD_LAYOUT_SYNC_MS = 140;
+const CARD_LAYOUT_ANIMATION_MS = 220;
 const DISCARD_CARD_WIDTH = 34;
 const DISCARD_CARD_HEIGHT = DISCARD_CARD_WIDTH * 510 / 322;
 const MISPLAY_FIRST_LEG_MS = 760;
@@ -42,6 +43,8 @@ const state = {
   selectionExitKinds: {},
   selectionExitTimers: {},
   localLayouts: {},
+  layoutAnimationCardIds: {},
+  layoutAnimationTimers: {},
   appliedClueSelectionKey: "",
   activeDrag: null,
   pendingAction: false,
@@ -58,7 +61,9 @@ const state = {
   pendingDrawAnimation: null,
   toastTimer: null,
   clueChooserResolve: null,
-  settingsPopoverHideTimer: null
+  settingsPopoverHideTimer: null,
+  rotationWheelAnimationFrame: null,
+  rotationWheelAnimationTimer: null
 };
 
 const setupView = document.querySelector("#setupView");
@@ -136,7 +141,7 @@ rainbowSetting.addEventListener("change", savePlayerPreferences);
 autoClueToggle.addEventListener("change", savePlayerPreferences);
 manualRotationToggle.addEventListener("change", () => {
   savePlayerPreferences();
-  renderRotationWheel();
+  handleManualRotationToggle();
 });
 settingsButton.addEventListener("click", () => toggleSettingsPopover());
 settingsCloseButton.addEventListener("click", () => closeSettingsPopover());
@@ -399,10 +404,6 @@ function closeSettingsPopover() {
     state.settingsPopoverHideTimer = null;
   };
 
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    finish();
-    return;
-  }
   state.settingsPopoverHideTimer = window.setTimeout(finish, CLUE_CHOOSER_EXIT_MS);
 }
 
@@ -769,13 +770,14 @@ function renderHand(surface, player, options) {
     const visualMode = cardHasDetails(card) && !options.concealed ? "face" : "back";
     const isLocallySelected = selectedCardIds(player.seat).includes(card.id);
     const isPeerSelected = peerSelectedCardIds(player.seat).includes(card.id);
-    const isOwnSelected = player.seat === state.mySeat && isLocallySelected && canSelectOwnCards();
+    const isOwnSelected = player.seat === state.mySeat && isLocallySelected && canArrangeOwnCards();
     const isOtherSelected = (player.seat !== state.mySeat && isLocallySelected && canSelectOpponentCards()) || isPeerSelected;
     const isSelected = isOwnSelected || isOtherSelected;
     const isPendingDraw = isPendingDrawCard(player.seat, card.id);
     const localLayout = player.seat === state.mySeat ? state.localLayouts[card.id] : null;
     const targetLayout = normalizeLayout(localLayout || card.layout || fallbackLayout(index));
     const previousLayout = previousLayouts.get(card.id);
+    const isOwnLayoutAnimating = player.seat === state.mySeat && Boolean(state.layoutAnimationCardIds[card.id]);
     const canAnimateLayout = options.animateLayout === true && player.seat !== state.mySeat;
     const shouldAnimateLayout = canAnimateLayout && previousLayout && !layoutsEqual(previousLayout, targetLayout);
     if (!existingElement) {
@@ -789,7 +791,7 @@ function renderHand(surface, player, options) {
       element.classList.add(`color-${card.color}`);
     }
     syncCardSelectionClasses(element, isOwnSelected, isOtherSelected);
-    element.classList.toggle("layout-animating", canAnimateLayout);
+    element.classList.toggle("layout-animating", canAnimateLayout || isOwnLayoutAnimating);
     element.classList.toggle("draw-pending", isPendingDraw);
     element.dataset.seat = player.seat;
     element.dataset.cardId = card.id;
@@ -1012,7 +1014,7 @@ function bindCardPointer(element, surface, player, card, options) {
 
   function updateGestureLayout(layout) {
     if (!gesture) return;
-    gesture.latestLayout = normalizeLayout(layout);
+    gesture.latestLayout = normalizeDragLayout(layout);
     gesture.moved = true;
     applyCardLayoutUpdate(surface, card, gesture.latestLayout, gesture.surfaceSize);
     sendMove(false);
@@ -1063,18 +1065,112 @@ function bindCardPointer(element, surface, player, card, options) {
 
 function renderRotationWheel() {
   const targets = selectedOwnLayoutTargets();
-  const canShow = manualRotationEnabled() && targets.length > 0 && canSelectOwnCards();
-  rotationWheel.classList.toggle("hidden", !canShow);
-  rotationWheel.setAttribute("aria-hidden", canShow ? "false" : "true");
+  const canShow = manualRotationEnabled() && canArrangeOwnCards();
+  setRotationWheelVisible(canShow);
   if (!canShow) return;
 
-  const layout = normalizeLayout(state.localLayouts[targets[0].card.id] || targets[0].card.layout);
+  const layout = targets.length > 0
+    ? normalizeLayout(state.localLayouts[targets[0].card.id] || targets[0].card.layout)
+    : normalizeLayout({ x: 50, y: 54, rotation: 0 });
   setRotationWheelAngle(layout.rotation);
+}
+
+function setRotationWheelVisible(canShow) {
+  rotationWheel.setAttribute("aria-hidden", canShow ? "false" : "true");
+  const isVisible = !rotationWheel.classList.contains("hidden");
+  if (canShow === isVisible) return;
+
+  window.clearTimeout(state.rotationWheelAnimationTimer);
+  window.cancelAnimationFrame(state.rotationWheelAnimationFrame);
+
+  const currentRect = rotationWheel.getBoundingClientRect();
+  rotationWheel.style.flexBasis = `${Math.round(currentRect.width)}px`;
+  rotationWheel.style.width = `${Math.round(currentRect.width)}px`;
+  rotationWheel.style.height = `${Math.round(currentRect.height)}px`;
+  rotationWheel.style.opacity = window.getComputedStyle(rotationWheel).opacity;
+  rotationWheel.classList.toggle("hidden", !canShow);
+
+  void rotationWheel.getBoundingClientRect();
+  state.rotationWheelAnimationFrame = window.requestAnimationFrame(() => {
+    rotationWheel.style.flexBasis = canShow ? "58px" : "0px";
+    rotationWheel.style.width = canShow ? "58px" : "0px";
+    rotationWheel.style.height = canShow ? "58px" : "0px";
+    rotationWheel.style.opacity = canShow ? "1" : "0";
+    state.rotationWheelAnimationFrame = null;
+  });
+
+  state.rotationWheelAnimationTimer = window.setTimeout(() => {
+    rotationWheel.style.flexBasis = "";
+    rotationWheel.style.width = "";
+    rotationWheel.style.height = "";
+    rotationWheel.style.opacity = "";
+    state.rotationWheelAnimationTimer = null;
+  }, CARD_LAYOUT_ANIMATION_MS + 40);
+}
+
+function handleManualRotationToggle() {
+  if (!manualRotationEnabled()) {
+    animateOwnCardsToAutoRotation();
+  }
+  renderRotationWheel();
+}
+
+function animateOwnCardsToAutoRotation() {
+  if (!canArrangeOwnCards()) return;
+
+  const player = playerForSeat(state.mySeat);
+  if (!player) return;
+
+  const surfaceSize = surfaceSizeFor(selfHand);
+  player.hand.forEach((card) => {
+    const layout = normalizeLayout(state.localLayouts[card.id] || card.layout);
+    const next = normalizeLayout({
+      ...layout,
+      rotation: autoRotationForX(layout.x)
+    });
+    if (layoutsEqual(layout, next)) return;
+
+    card.layout = next;
+    rememberLocalLayout(card.id, next);
+
+    const element = cardElementById(selfHand, card.id);
+    if (element) {
+      startLayoutAnimation(card.id, element);
+      applyLayout(element, next, surfaceSize);
+    }
+
+    scheduleAction({
+      type: "move-card",
+      seat: state.mySeat,
+      cardId: card.id,
+      ...next
+    }, { silent: true });
+  });
+}
+
+function startLayoutAnimation(cardId, element) {
+  state.layoutAnimationCardIds[cardId] = true;
+  window.clearTimeout(state.layoutAnimationTimers[cardId]);
+  element.classList.add("layout-animating");
+  void element.getBoundingClientRect();
+  state.layoutAnimationTimers[cardId] = window.setTimeout(() => {
+    clearLayoutAnimation(cardId);
+  }, CARD_LAYOUT_ANIMATION_MS);
+}
+
+function clearLayoutAnimation(cardId) {
+  window.clearTimeout(state.layoutAnimationTimers[cardId]);
+  delete state.layoutAnimationCardIds[cardId];
+  delete state.layoutAnimationTimers[cardId];
+  const element = cardElementById(selfHand, cardId);
+  if (element) {
+    element.classList.remove("layout-animating");
+  }
 }
 
 function handleRotationWheelPointerDown(event) {
   const targets = selectedOwnLayoutTargets();
-  if (!manualRotationEnabled() || targets.length === 0 || !canSelectOwnCards()) return;
+  if (!manualRotationEnabled() || targets.length === 0 || !canArrangeOwnCards()) return;
 
   event.preventDefault();
   rotationWheel.setPointerCapture(event.pointerId);
@@ -1097,6 +1193,7 @@ function handleRotationWheelPointerDown(event) {
   };
   gesture.latestTargets = gesture.targets.map(({ card, layout }) => ({ card, layout }));
   state.activeDrag = { seat: state.mySeat, cardId: "rotation-wheel" };
+  rotationWheel.classList.add("is-rotating");
 
   function sendRotation(force) {
     const now = Date.now();
@@ -1135,6 +1232,7 @@ function handleRotationWheelPointerDown(event) {
     rotationWheel.removeEventListener("pointerup", onPointerUp);
     rotationWheel.removeEventListener("pointercancel", onPointerCancel);
     releaseCardPointer(rotationWheel, gesture.pointerId);
+    rotationWheel.classList.remove("is-rotating");
     state.activeDrag = null;
 
     if (!shouldCommit) {
@@ -1177,6 +1275,13 @@ function handleRotationWheelPointerDown(event) {
 
 function manualRotationEnabled() {
   return manualRotationToggle.checked;
+}
+
+function normalizeDragLayout(layout) {
+  const next = normalizeLayout(layout);
+  return manualRotationEnabled()
+    ? next
+    : normalizeLayout({ ...next, rotation: autoRotationForX(next.x) });
 }
 
 function selectedOwnLayoutTargets() {
@@ -1368,7 +1473,7 @@ function fallbackLayout(index) {
 
 function selectCard(seat, cardId, options = {}) {
   if (seat === state.mySeat) {
-    if (!canSelectOwnCards()) {
+    if (!canArrangeOwnCards()) {
       queueSelectionExit(selectedCardIds(seat), "own");
       state.selectedCards[seat] = [];
       updateSelectionClasses();
@@ -1463,7 +1568,7 @@ function updateSelectionClasses() {
   document.querySelectorAll(".table-card").forEach((element) => {
     const isLocallySelected = selectedCardIds(element.dataset.seat).includes(element.dataset.cardId);
     const isPeerSelected = peerSelectedCardIds(element.dataset.seat).includes(element.dataset.cardId);
-    const isOwnSelected = element.dataset.seat === state.mySeat && isLocallySelected && canSelectOwnCards();
+    const isOwnSelected = element.dataset.seat === state.mySeat && isLocallySelected && canArrangeOwnCards();
     const isOtherSelected = (element.dataset.seat !== state.mySeat && isLocallySelected && canSelectOpponentCards()) || isPeerSelected;
     const isSelected = isOwnSelected || isOtherSelected;
     syncCardSelectionClasses(element, isOwnSelected, isOtherSelected);
@@ -1963,7 +2068,7 @@ function rectSnapshot(rect) {
 }
 
 function animateActionResult(snapshot) {
-  if (!snapshot || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
+  if (!snapshot) return false;
 
   const path = actionResultPath(snapshot.result);
   if (!path) return false;
@@ -2156,10 +2261,6 @@ function finishActionOverlay(snapshot, overlay) {
 function animateReplacementDraw(snapshot) {
   const replacement = snapshot.replacement;
   if (!replacement) return;
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    clearPendingDrawAnimation(snapshot.key);
-    return;
-  }
 
   const surface = replacement.seat === state.mySeat ? selfHand : opponentHand;
   const targetElement = cardElementById(surface, replacement.card.id);
@@ -2424,8 +2525,12 @@ function canSelectOpponentCards() {
   return state.room && state.room.status !== "ended" && state.room.turnSeat === state.mySeat && state.room.hints > 0;
 }
 
+function canArrangeOwnCards() {
+  return state.room && state.room.status !== "ended";
+}
+
 function canSelectOwnCards() {
-  return state.room && state.room.status !== "ended" && state.room.turnSeat === state.mySeat;
+  return canArrangeOwnCards() && state.room.turnSeat === state.mySeat;
 }
 
 function renderDiscard(room) {
