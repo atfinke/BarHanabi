@@ -1113,9 +1113,9 @@ const REPLAY_CSV_COLUMNS = [
   "clue_value",
   "clue_label",
   "clued_card_ids",
-  "result_type",
+  "result_pile",
   "result_action",
-  "playable",
+  "play_succeeded",
   "drew_replacement",
   "replacement_card_id",
   "hand_seat",
@@ -1126,9 +1126,9 @@ const REPLAY_CSV_COLUMNS = [
   "possible_colors",
   "possible_ranks",
   "possible_identities",
-  "x",
-  "y",
-  "rotation",
+  "layout_x",
+  "layout_y",
+  "layout_rotation",
   "deck_count",
   "turn_seat",
   "status",
@@ -1214,9 +1214,9 @@ function eventCsvFields(room, event, moveNumberBySeq) {
     clue_value: event.clue?.value,
     clue_label: event.clue?.label,
     clued_card_ids: (event.cardIds || []).join("|"),
-    result_type: result.type,
+    result_pile: result.type,
     result_action: result.action,
-    playable: event.playable,
+    play_succeeded: event.playable,
     drew_replacement: event.drewReplacement,
     replacement_card_id: replacement?.id,
     end_reason: event.table?.endReason || event.reason,
@@ -1236,9 +1236,9 @@ function layoutCheckpointCsvRows(room, event, moveNumberBySeq) {
       card_id: card.id,
       card_color: card.color,
       card_rank: card.rank,
-      x: card.layout?.x,
-      y: card.layout?.y,
-      rotation: card.layout?.rotation
+      layout_x: card.layout?.x,
+      layout_y: card.layout?.y,
+      layout_rotation: card.layout?.rotation
     }));
   });
   return rows;
@@ -1264,9 +1264,9 @@ function handCsvRows(room, event, moveNumberBySeq) {
         possible_identities: (cardKnowledge.identities || [])
           .map((identity) => `${identity.color}-${identity.rank}`)
           .join("|"),
-        x: card.layout?.x,
-        y: card.layout?.y,
-        rotation: card.layout?.rotation
+        layout_x: card.layout?.x,
+        layout_y: card.layout?.y,
+        layout_rotation: card.layout?.rotation
       }));
     });
   }

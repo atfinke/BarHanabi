@@ -259,9 +259,9 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
     "clue_value",
     "clue_label",
     "clued_card_ids",
-    "result_type",
+    "result_pile",
     "result_action",
-    "playable",
+    "play_succeeded",
     "drew_replacement",
     "replacement_card_id",
     "hand_seat",
@@ -289,6 +289,11 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
   }
   assert.ok(!header.split(",").includes("snapshot_phase"), "snapshot_phase removed");
   assert.doesNotMatch(replayCsv.text.split("\n")[0], /perspective/i);
+
+  const csvKeyDoc = require("node:fs").readFileSync("docs/replay-csv.md", "utf8");
+  for (const column of header.split(",")) {
+    assert.ok(csvKeyDoc.includes(`\`${column}\``), `CSV column ${column} is undocumented in docs/replay-csv.md`);
+  }
 
   const rows = csvRows(replayCsv.text);
   const sequencedRows = rows.filter((row) => row.event_seq !== "").map((row) => Number(row.event_seq));
@@ -329,9 +334,9 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
   assert.equal(playCsvEvent.action_card_id, scenario.bUnplayable.id);
   assert.equal(playCsvEvent.action_card_color, scenario.bUnplayable.color);
   assert.equal(playCsvEvent.action_card_rank, String(scenario.bUnplayable.rank));
-  assert.equal(playCsvEvent.result_type, "discard");
+  assert.equal(playCsvEvent.result_pile, "discard");
   assert.equal(playCsvEvent.result_action, "play");
-  assert.equal(playCsvEvent.playable, "false");
+  assert.equal(playCsvEvent.play_succeeded, "false");
 
   const endCsvEvent = eventRows.find((row) => row.event_type === "end-game");
   assert.equal(endCsvEvent.end_reason, "strikes");
@@ -347,8 +352,8 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
     row.card_rank === String(movedCardIdentity.rank) &&
     row.deck_count !== "" &&
     row.fireworks !== "" &&
-    row.x === "42" &&
-    row.rotation === "7"
+    row.layout_x === "42" &&
+    row.layout_rotation === "7"
   ));
 
   const clueEvent = clueSnapshotEvent;

@@ -1025,7 +1025,9 @@ test("ended game UI exposes compact replay controls", () => {
   assert.match(script, /function replayHandView\(seat\)/);
   assert.match(script, /function toggleReplayHandView\(seat\)/);
   assert.match(script, /replayCsvButton\.addEventListener\("click", \(\) => downloadReplayCsv\(\)\);/);
-  assert.match(script, /fetch\(`\/api\/replay\?code=\$\{encodeURIComponent\(state\.room\.code\)\}`\)/);
+  assert.match(script, /const requestedCode = state\.room\.code;/);
+  assert.match(script, /fetch\(`\/api\/replay\?code=\$\{encodeURIComponent\(requestedCode\)\}`\)/);
+  assert.match(script, /if \(state\.room\?\.code !== requestedCode\) return;/);
   assert.match(script, /\/api\/replay\.csv\?code=\$\{encodeURIComponent\(state\.room\.code\)\}/);
   assert.match(script, /function replayTimelineEvents\(\)/);
   assert.match(script, /data\.layoutEvents/);

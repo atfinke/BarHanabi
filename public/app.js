@@ -1037,11 +1037,13 @@ function openReplayAtLatest(options = {}) {
 }
 
 async function fetchReplay(options = {}) {
+  const requestedCode = state.room.code;
   state.replay.loading = true;
   renderReplayPanel();
   try {
-    const response = await fetch(`/api/replay?code=${encodeURIComponent(state.room.code)}`);
+    const response = await fetch(`/api/replay?code=${encodeURIComponent(requestedCode)}`);
     const payload = await response.json();
+    if (state.room?.code !== requestedCode) return;
     if (!response.ok) {
       throw new Error(payload.error || "Replay unavailable.");
     }
@@ -1053,10 +1055,14 @@ async function fetchReplay(options = {}) {
       }
     }
   } catch (error) {
-    showToast(error.message);
+    if (state.room?.code === requestedCode) {
+      showToast(error.message);
+    }
   } finally {
-    state.replay.loading = false;
-    renderReplayPanel();
+    if (state.room?.code === requestedCode) {
+      state.replay.loading = false;
+      renderReplayPanel();
+    }
   }
 }
 
