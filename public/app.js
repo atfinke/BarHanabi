@@ -565,6 +565,7 @@ function switchSeat(nextSeat) {
   const normalizedSeat = normalizeSeatOption(nextSeat, state.mySeat);
   if (normalizedSeat === state.mySeat) return;
   state.mySeat = normalizedSeat;
+  resetReplayHandViews();
   resetLocalSelections();
   storageSetItem("barHanabiSeat", state.mySeat);
   if (state.room) {
@@ -904,7 +905,6 @@ function setReplayLayoutCheckpointsVisible(show, options = {}) {
   }
 }
 
-
 function currentReplayEvent() {
   const events = replayTimelineEvents();
   if (events.length === 0) return null;
@@ -1234,7 +1234,7 @@ function animateReplayActionForwardTransition(plan) {
     gameView.dataset.replayAction = "idle";
     ghost?.remove();
     overlay.remove();
-    clearPendingDrawAnimation(snapshot.key, { update: false });
+    clearPendingDrawAnimation(snapshot.key);
     return true;
   }
   animation.destElement = destElement;

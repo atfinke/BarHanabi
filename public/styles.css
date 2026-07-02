@@ -934,9 +934,6 @@ h2 {
 
 .game[data-replay="open"] .table-card {
   pointer-events: none;
-}
-
-.game[data-replay="open"] .table-card {
   -webkit-perspective: 900px;
   perspective: 900px;
 }
@@ -1291,9 +1288,6 @@ h2 {
   color: var(--text);
   font-size: 0.72rem;
   font-weight: 850;
-}
-
-.replay-panel button {
   padding: 0 10px;
 }
 

@@ -1306,15 +1306,6 @@ function serializeFireworks(fireworks = {}, colors) {
   return colors.map((color) => `${color.id}:${fireworks[color.id] || 0}`).join("|");
 }
 
-function snapshotCard(event, seat, cardId) {
-  return event.hands?.[seat]?.find((card) => card.id === cardId) || null;
-}
-
-function snapshotCardIndex(event, seat, cardId) {
-  const index = event.hands?.[seat]?.findIndex((card) => card.id === cardId);
-  return index >= 0 ? index : "";
-}
-
 function csvRow(values) {
   return REPLAY_CSV_COLUMNS.map((column) => csvValue(values[column])).join(",");
 }
