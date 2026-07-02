@@ -454,7 +454,7 @@ test("ended deck reveal wires a popover from the deck tile", () => {
     /const deckReveal = document\.querySelector\("#deckReveal"\);/,
     /deckTile\.addEventListener\("click", \(\) => openDeckReveal\(\)\);/,
     /function updateDeckRevealState\(room\)/,
-    /const canRevealDeck = room\.status === "ended" && Array\.isArray\(room\.remainingDeck\);/,
+    /const canRevealDeck = room\.status === "ended" && Array\.isArray\(room\.remainingDeck\) && room\.remainingDeck\.length > 0;/,
     /deckTile\.disabled = !canRevealDeck;/,
     /function renderRemainingDeck\(cards\)/,
     /deckRevealGrid\.replaceChildren\(\.\.\.cards\.map\(\(card\) => createMiniCard\(card\)\)\);/

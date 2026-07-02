@@ -511,7 +511,7 @@ function closeSettingsPopover() {
 
 function updateDeckRevealState(room) {
   if (!room) return;
-  const canRevealDeck = room.status === "ended" && Array.isArray(room.remainingDeck);
+  const canRevealDeck = room.status === "ended" && Array.isArray(room.remainingDeck) && room.remainingDeck.length > 0;
   deckTile.disabled = !canRevealDeck;
   deckTile.classList.toggle("is-revealable", canRevealDeck);
   const deckRevealCollapsed = deckReveal.classList.contains("hidden") || deckReveal.classList.contains("is-closing");
@@ -551,13 +551,6 @@ function renderRemainingDeck(cards) {
   state.deckRevealRenderKey = renderKey;
 
   deckRevealCount.textContent = `${cards.length} ${cards.length === 1 ? "card" : "cards"}`;
-  if (cards.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "deck-reveal-empty";
-    empty.textContent = "No cards left.";
-    deckRevealGrid.replaceChildren(empty);
-    return;
-  }
   deckRevealGrid.replaceChildren(...cards.map((card) => createMiniCard(card)));
 }
 
