@@ -1079,6 +1079,7 @@ test("replay action animation is planned only for adjacent steps", () => {
   };
   client.state.replay.data = {
     actionEvents: [
+      { seq: 0, type: "start", hands: {}, table: {}, knowledge: {} },
       { seq: 1, type: "play", result: currentActionResult, hands: {}, table: {}, knowledge: {} },
       { seq: 2, type: "discard", result: nextActionResult, hands: {}, table: {}, knowledge: {} },
       { seq: 4, type: "give-clue", hands: {}, table: {}, knowledge: {} }
@@ -1097,13 +1098,11 @@ test("replay action animation is planned only for adjacent steps", () => {
   assert.equal(client.replayActionTransitionPlan(0, 2), null);
 
   client.state.replay.settings.showLayoutCheckpoints = true;
-  const forwardToLayoutPlan = client.replayActionTransitionPlan(1, 2);
-  assert.equal(forwardToLayoutPlan?.result, nextActionResult);
-  assert.equal(forwardToLayoutPlan?.direction, "forward");
-  const reverseFromLayoutPlan = client.replayActionTransitionPlan(2, 1);
-  assert.equal(reverseFromLayoutPlan?.result, nextActionResult);
-  assert.equal(reverseFromLayoutPlan?.direction, "reverse");
-  assert.equal(client.replayActionTransitionPlan(2, 3), null);
+  const forwardToLayoutPlan = client.replayActionTransitionPlan(2, 3);
+  assert.equal(forwardToLayoutPlan, null);
+  const reverseFromLayoutPlan = client.replayActionTransitionPlan(3, 2);
+  assert.equal(reverseFromLayoutPlan, null);
+  assert.equal(client.replayActionTransitionPlan(3, 4), null);
 });
 
 test("same-target replay index updates keep an active action animation", () => {
@@ -1165,6 +1164,13 @@ test("reverse replay action commits state immediately and hides the returning ca
       players: [{ seat: "A", name: "Player A" }, { seat: "B", name: "Player B" }],
       actionEvents: [
         {
+          seq: 0,
+          type: "start",
+          hands: { A: [discardedCard], B: [] },
+          table: { deckCount: 47, discard: [], fireworks: { white: 0 }, bombs: 0, hints: 7 },
+          knowledge: { A: { cards: {} }, B: { cards: {} } }
+        },
+        {
           seq: 1,
           type: "discard",
           result: {
@@ -1174,13 +1180,6 @@ test("reverse replay action commits state immediately and hides the returning ca
             cardId: discardedCard.id,
             card: discardedCard
           },
-          hands: { A: [discardedCard], B: [] },
-          table: { deckCount: 47, discard: [], fireworks: { white: 0 }, bombs: 0, hints: 7 },
-          knowledge: { A: { cards: {} }, B: { cards: {} } }
-        },
-        {
-          seq: 2,
-          type: "give-clue",
           hands: { A: [], B: [] },
           table: { deckCount: 46, discard: [discardedCard], fireworks: { white: 0 }, bombs: 0, hints: 7 },
           knowledge: { A: { cards: {} }, B: { cards: {} } }

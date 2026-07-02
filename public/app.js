@@ -1139,7 +1139,7 @@ function replayActionTransitionPlan(fromIndex, targetIndex, events = replayTimel
       ? "reverse"
       : null;
   if (!direction) return null;
-  const event = direction === "forward" ? events[fromIndex] : events[targetIndex];
+  const event = direction === "forward" ? events[targetIndex] : events[fromIndex];
   const result = event?.result;
   if (!result || event.timelineType === "layout") return null;
   if (result.action !== "play" && result.action !== "discard") return null;
