@@ -1072,6 +1072,15 @@ function sendCsv(response, filename, text) {
   response.end(text);
 }
 
+function sendText(response, filename, text) {
+  response.writeHead(200, {
+    "content-type": "text/plain; charset=utf-8",
+    "cache-control": "no-store",
+    "content-disposition": `attachment; filename="${filename}"`
+  });
+  response.end(text);
+}
+
 function replayState(room) {
   return {
     code: room.code,
@@ -1095,6 +1104,40 @@ function replayState(room) {
     actionEvents: room.actionEvents,
     layoutEvents: room.layoutEvents
   };
+}
+
+function replayRecap(room) {
+  const maxScore = room.colors.length * 5;
+  const score = scoreRoom(room);
+  const highlights = replayHighlights(room);
+  const lines = [
+    `Bar Hanabi ${room.code}`,
+    `Score: ${score}/${maxScore} (${scorePercent(score, room)}%)`,
+    `Result: ${endReasonLabel(room.endReason)}`
+  ];
+
+  if (highlights.length) {
+    lines.push("", "Highlights:");
+    for (const highlight of highlights.slice(0, 12)) {
+      lines.push(`- ${recapHighlightLine(highlight)}`);
+    }
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+function recapHighlightLine(highlight) {
+  const prefix = Number(highlight.moveNumber) > 0 ? `Move ${highlight.moveNumber}` : "Setup";
+  return `${prefix}: ${highlight.summary || highlight.title}`;
+}
+
+function endReasonLabel(reason) {
+  const labels = {
+    perfect: "Perfect game",
+    strikes: "Bombs",
+    deck: "Final round"
+  };
+  return labels[reason] || "Ended";
 }
 
 function replayHighlights(room) {
@@ -1573,6 +1616,21 @@ async function router(request, response) {
         return;
       }
       sendCsv(response, `bar-hanabi-${room.code}-replay.csv`, replayCsv(room));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/recap.txt") {
+      const code = String(url.searchParams.get("code") || "").toUpperCase();
+      const room = rooms.get(code);
+      if (!room) {
+        sendJson(response, 404, { error: "Room not found." });
+        return;
+      }
+      if (room.status !== "ended") {
+        sendJson(response, 400, { error: "Recap is available after the game ends." });
+        return;
+      }
+      sendText(response, `bar-hanabi-${room.code}-recap.txt`, replayRecap(room));
       return;
     }
 

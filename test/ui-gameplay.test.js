@@ -1000,6 +1000,7 @@ test("client displays official endgame state and blocks ended gameplay", () => {
 test("ended game UI exposes compact replay controls", () => {
   const html = read("public/index.html");
   const script = read("public/app.js");
+  const styles = read("public/styles.css");
 
   for (const pattern of [
     /id="replayPanel"/,
@@ -1007,6 +1008,7 @@ test("ended game UI exposes compact replay controls", () => {
     /id="replayNextButton"/,
     /id="replayTimeline"/,
     /id="replayCsvButton"/,
+    /id="replayRecapButton"/,
     /id="opponentFlipButton"[\s\S]*>Flip<\/button>/,
     /id="selfFlipButton"[\s\S]*>Flip<\/button>/
   ]) {
@@ -1018,6 +1020,7 @@ test("ended game UI exposes compact replay controls", () => {
   assert.ok(html.indexOf('id="replayPreviousButton"') < html.indexOf('id="replayTimeline"'));
   assert.ok(html.indexOf('id="replayTimeline"') < html.indexOf('id="replayNextButton"'));
   assert.ok(html.indexOf('id="replayNextButton"') < html.indexOf('id="replayCsvButton"'));
+  assert.ok(html.indexOf('id="replayCsvButton"') < html.indexOf('id="replayRecapButton"'));
 
   assert.doesNotMatch(script, /replayPerspectiveSelect/);
   assert.match(script, /selfFlipButton\.addEventListener\("click", \(\) => toggleReplayHandView\(state\.mySeat\)\);/);
@@ -1025,10 +1028,15 @@ test("ended game UI exposes compact replay controls", () => {
   assert.match(script, /function replayHandView\(seat\)/);
   assert.match(script, /function toggleReplayHandView\(seat\)/);
   assert.match(script, /replayCsvButton\.addEventListener\("click", \(\) => downloadReplayCsv\(\)\);/);
+  assert.match(script, /replayRecapButton\.addEventListener\("click", \(\) => copyReplayRecap\(\)\);/);
   assert.match(script, /const requestedCode = state\.room\.code;/);
   assert.match(script, /fetch\(`\/api\/replay\?code=\$\{encodeURIComponent\(requestedCode\)\}`\)/);
   assert.match(script, /if \(state\.room\?\.code !== requestedCode\) return;/);
   assert.match(script, /\/api\/replay\.csv\?code=\$\{encodeURIComponent\(state\.room\.code\)\}/);
+  assert.match(script, /async function copyReplayRecap\(\)/);
+  assert.match(script, /fetch\(`\/api\/recap\.txt\?code=\$\{encodeURIComponent\(state\.room\.code\)\}`\)/);
+  assert.match(script, /await copyTextToClipboard\(text\);/);
+  assert.match(script, /showToast\("Recap copied\."\);/);
   assert.match(script, /function replayTimelineEvents\(\)/);
   assert.match(script, /data\.layoutEvents/);
   assert.match(script, /\[\.\.\.actions, \.\.\.layouts\]\.sort\(\(a, b\) => a\.seq - b\.seq\)/);
@@ -1039,6 +1047,7 @@ test("ended game UI exposes compact replay controls", () => {
   assert.match(script, /function openReplayAtLatest\(options = \{\}\)/);
   assert.match(script, /state\.replay\.index = Math\.max\(0, events\.length - 1\);/);
   assert.match(script, /state\.room\.status === "ended"/);
+  assert.match(styles, /grid-template-columns: auto minmax\(0, 1fr\) repeat\(3, auto\);/);
   assert.match(html, /class="area-actions self-controls"[\s\S]*id="replayPanel"/);
 });
 
