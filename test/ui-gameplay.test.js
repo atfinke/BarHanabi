@@ -162,8 +162,8 @@ function loadClientForUiStateTest(options = {}) {
       matchMedia() {
         return { matches: false, addEventListener() {}, removeEventListener() {} };
       },
-      setTimeout() {
-        animationTimers.push(true);
+      setTimeout(callback, delay) {
+        animationTimers.push({ delay });
         return 1;
       },
       clearTimeout() {},
@@ -833,7 +833,6 @@ test("client disables teammate selection when hints are unavailable", () => {
 
 test("action card animation hides table handoff and deflects missed plays", () => {
   const script = read("public/app.js");
-  const styles = read("public/styles.css");
 
   assert.match(script, /function actionResultPath\(result\)/);
   assert.match(script, /function isMissedPlayResult\(result\)/);
@@ -848,15 +847,66 @@ test("action card animation hides table handoff and deflects missed plays", () =
   assert.match(script, /const DISCARD_CARD_WIDTH = 34;/);
   assert.match(script, /const DISCARD_CARD_HEIGHT = DISCARD_CARD_WIDTH \* 510 \/ 322;/);
   assert.match(script, /overlay\.remove\(\);\s*animation\.ghost\?\.remove\(\);\s*unhideReplayActionDestination\(animation\.destElement\);[\s\S]*window\.requestAnimationFrame\(\(\) => \{[\s\S]*animateReplacementDraw\(animation\);[\s\S]*\}\);/);
-  assert.match(script, /function queueBombAnimation\(previousRoom, nextRoom\)/);
-  assert.match(script, /isMissedPlayResult\(nextRoom\.lastResult \|\| \{\}\)/);
-  assert.match(script, /resultIdentity\(previousRoom\.lastResult\) === resultIdentity\(nextRoom\.lastResult\)/);
-  assert.match(script, /state\.pendingBombAnimationKey = bombAnimationKey\(nextRoom\);/);
-  assert.match(script, /function updateBombCount\(tableRoom\)/);
-  assert.match(script, /if \(tableRoom !== state\.room\) return;/);
-  assert.match(script, /bombCount\.classList\.add\("is-bomb-hit"\);/);
-  assert.match(styles, /\.score-strip strong\.is-bomb-hit/);
-  assert.match(styles, /@keyframes bomb-count-hit/);
+});
+
+test("missed plays pulse the bomb counter once per result", () => {
+  const client = loadClientForUiStateTest();
+  const bombCount = client.document.querySelector("#bombCount");
+  const missedCard = { id: "missed-card", color: "red", rank: 3 };
+  const missedResult = {
+    type: "discard",
+    action: "play",
+    actorSeat: "B",
+    cardId: missedCard.id,
+    color: missedCard.color,
+    rank: missedCard.rank,
+    card: missedCard
+  };
+  function roomWithBombs({ version, bombs, maxBombs = 3, lastResult = null }) {
+    return {
+      code: "BOMB",
+      version,
+      deckCount: 40,
+      discard: [],
+      fireworks: { red: 0 },
+      hints: 8,
+      maxHints: 8,
+      bombs,
+      maxBombs,
+      colors: [{ id: "red", label: "Red" }],
+      lastResult,
+      turnSeat: "A",
+      status: "playing",
+      players: [
+        { seat: "A", hand: [] },
+        { seat: "B", hand: [] }
+      ],
+      presence: { A: true, B: true },
+      log: [],
+      score: 0,
+      maxScore: 5
+    };
+  }
+
+  client.applyRoomState(roomWithBombs({ version: 1, bombs: 0 }));
+
+  const bombPulseTimers = () => client.animationTimers.filter((timer) => timer.delay === 540).length;
+  const baselineBombPulseTimers = bombPulseTimers();
+  const baselineLayoutReads = bombCount.layoutReadCount || 0;
+
+  assert.equal(bombCount.textContent, "0/3");
+  assert.equal(bombCount.classList.contains("is-bomb-hit"), false);
+
+  client.applyRoomState(roomWithBombs({ version: 2, bombs: 1, lastResult: missedResult }));
+
+  assert.equal(bombCount.textContent, "1/3");
+  assert.equal(bombCount.classList.contains("is-bomb-hit"), true);
+  assert.equal(bombCount.layoutReadCount > baselineLayoutReads, true);
+  assert.equal(bombPulseTimers(), baselineBombPulseTimers + 1);
+
+  client.applyRoomState(roomWithBombs({ version: 3, bombs: 1, lastResult: missedResult }));
+
+  assert.equal(bombPulseTimers(), baselineBombPulseTimers + 1);
 });
 
 test("card interactions move with one pointer and rotate with wheel or option-drag", () => {
