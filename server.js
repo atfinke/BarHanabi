@@ -249,6 +249,7 @@ function replaySnapshot(room) {
   };
 }
 
+// Callers that may end the game must capture seq before finishTurn/endGame so the sort keeps their event ahead of end-game.
 function appendActionEvent(room, type, payload = {}, seq = nextReplaySeq(room)) {
   const snapshot = replaySnapshot(room);
   room.actionEvents.push({
@@ -825,13 +826,14 @@ function handleAction(room, action) {
     room.lastResult = null;
     room.hints -= 1;
     addLog(room, `${player.name} gave a clue.`);
+    const seq = nextReplaySeq(room);
+    finishTurn(room, player);
     appendActionEvent(room, "give-clue", {
       actorSeat: player.seat,
       targetSeat: room.clueSelection.seat,
       cardIds: [...room.clueSelection.cardIds],
       clue: { ...room.clueSelection.clue }
-    });
-    finishTurn(room, player);
+    }, seq);
     touch(room);
     return room;
   }
