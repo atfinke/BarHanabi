@@ -1083,9 +1083,11 @@ function downloadReplayCsv() {
 async function copyReplayRecap() {
   if (!state.room || state.room.status !== "ended") return;
 
+  const requestedCode = state.room.code;
   try {
-    const response = await fetch(`/api/recap.txt?code=${encodeURIComponent(state.room.code)}`);
+    const response = await fetch(`/api/recap.txt?code=${encodeURIComponent(requestedCode)}`);
     const text = await response.text();
+    if (state.room?.code !== requestedCode) return;
     if (!response.ok) {
       let message = "Recap unavailable.";
       try {
@@ -1094,9 +1096,12 @@ async function copyReplayRecap() {
       throw new Error(message);
     }
     await copyTextToClipboard(text);
+    if (state.room?.code !== requestedCode) return;
     showToast("Recap copied.");
   } catch (error) {
-    showToast(error.message);
+    if (state.room?.code === requestedCode) {
+      showToast(error.message);
+    }
   }
 }
 

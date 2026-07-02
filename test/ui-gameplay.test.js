@@ -132,6 +132,7 @@ function loadClientForUiStateTest(options = {}) {
   const elements = new Map();
   const scheduledActions = [];
   const animationTimers = [];
+  const clipboardWrites = [];
   const storage = new Map(Object.entries(options.storage || {}));
   const document = {
     querySelector(selector) {
@@ -192,6 +193,14 @@ function loadClientForUiStateTest(options = {}) {
         storage.delete(key);
       }
     },
+    navigator: options.navigator || {
+      clipboard: {
+        async writeText(text) {
+          clipboardWrites.push(text);
+        }
+      }
+    },
+    fetch: options.fetch || (async () => ({ ok: true, json: async () => ({}), text: async () => "" })),
     URLSearchParams,
     requestAnimationFrame(callback) {
       callback(0);
@@ -210,10 +219,10 @@ function loadClientForUiStateTest(options = {}) {
   };
 
   vm.runInNewContext(
-    `${read("public/app.js")}\nglobalThis.__client = { state, document, applyRoomState, tableDisplayRoom, updateActionButtons, updateRoomCodeLabel, roomCodeLabel, selfPlayButton, selfDiscardButton, selfHand, opponentHand, hintSetting, bombSetting, rainbowSetting, autoClueToggle, manualRotationToggle, replayLayoutStepsToggle, readSetupSettings, handleManualRotationToggle, renderHand, autoRotationForX, replayTimelineEvents, replayActionTransitionPlan, setReplayIndex, finishReplayActionFlight, placeReplayReverseActionOverlay, moveReplayReverseActionOverlay, setReplayLayoutCheckpointsVisible, discardBucketForCard, neededDiscardPile, spentDiscardPile, scheduledActions, animationTimers };`,
+    `${read("public/app.js")}\nglobalThis.__client = { state, document, applyRoomState, tableDisplayRoom, updateActionButtons, updateRoomCodeLabel, roomCodeLabel, selfPlayButton, selfDiscardButton, selfHand, opponentHand, hintSetting, bombSetting, rainbowSetting, autoClueToggle, manualRotationToggle, replayLayoutStepsToggle, readSetupSettings, handleManualRotationToggle, renderHand, autoRotationForX, replayTimelineEvents, replayActionTransitionPlan, setReplayIndex, finishReplayActionFlight, placeReplayReverseActionOverlay, moveReplayReverseActionOverlay, setReplayLayoutCheckpointsVisible, discardBucketForCard, neededDiscardPile, spentDiscardPile, copyReplayRecap, toast, scheduledActions, animationTimers };`,
     sandbox
   );
-  return { ...sandbox.__client, storage };
+  return { ...sandbox.__client, storage, clipboardWrites };
 }
 
 function visibleCardElement(cardId) {
@@ -1034,7 +1043,7 @@ test("ended game UI exposes compact replay controls", () => {
   assert.match(script, /if \(state\.room\?\.code !== requestedCode\) return;/);
   assert.match(script, /\/api\/replay\.csv\?code=\$\{encodeURIComponent\(state\.room\.code\)\}/);
   assert.match(script, /async function copyReplayRecap\(\)/);
-  assert.match(script, /fetch\(`\/api\/recap\.txt\?code=\$\{encodeURIComponent\(state\.room\.code\)\}`\)/);
+  assert.match(script, /fetch\(`\/api\/recap\.txt\?code=\$\{encodeURIComponent\(requestedCode\)\}`\)/);
   assert.match(script, /await copyTextToClipboard\(text\);/);
   assert.match(script, /showToast\("Recap copied\."\);/);
   assert.match(script, /function replayTimelineEvents\(\)/);
@@ -1049,6 +1058,43 @@ test("ended game UI exposes compact replay controls", () => {
   assert.match(script, /state\.room\.status === "ended"/);
   assert.match(styles, /grid-template-columns: auto minmax\(0, 1fr\) repeat\(3, auto\);/);
   assert.match(html, /class="area-actions self-controls"[\s\S]*id="replayPanel"/);
+});
+
+test("recap copy ignores responses for rooms the user left", async () => {
+  const fetchCalls = [];
+  const client = loadClientForUiStateTest({
+    fetch: async (url) => {
+      fetchCalls.push(url);
+      return { ok: true, text: async () => "stale recap" };
+    }
+  });
+
+  client.state.room = { code: "OLD1", status: "ended" };
+  await client.copyReplayRecap();
+
+  assert.deepEqual(fetchCalls, ["/api/recap.txt?code=OLD1"]);
+  assert.deepEqual(client.clipboardWrites, ["stale recap"]);
+  assert.equal(client.toast.textContent, "Recap copied.");
+
+  let resolveFetch;
+  const staleResponse = new Promise((resolve) => {
+    resolveFetch = resolve;
+  });
+  const staleClient = loadClientForUiStateTest({
+    fetch: async (url) => {
+      fetchCalls.push(url);
+      return staleResponse;
+    }
+  });
+
+  staleClient.state.room = { code: "OLD2", status: "ended" };
+  const copyPromise = staleClient.copyReplayRecap();
+  staleClient.state.room = { code: "NEW2", status: "ended" };
+  resolveFetch({ ok: true, text: async () => "old room recap" });
+  await copyPromise;
+
+  assert.deepEqual(staleClient.clipboardWrites, []);
+  assert.equal(staleClient.toast.textContent, "");
 });
 
 test("replay card backs render rank and color possibility grids", () => {
