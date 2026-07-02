@@ -833,6 +833,7 @@ test("client disables teammate selection when hints are unavailable", () => {
 
 test("action card animation hides table handoff and deflects missed plays", () => {
   const script = read("public/app.js");
+  const styles = read("public/styles.css");
 
   assert.match(script, /function actionResultPath\(result\)/);
   assert.match(script, /function isMissedPlayResult\(result\)/);
@@ -847,6 +848,15 @@ test("action card animation hides table handoff and deflects missed plays", () =
   assert.match(script, /const DISCARD_CARD_WIDTH = 34;/);
   assert.match(script, /const DISCARD_CARD_HEIGHT = DISCARD_CARD_WIDTH \* 510 \/ 322;/);
   assert.match(script, /overlay\.remove\(\);\s*animation\.ghost\?\.remove\(\);\s*unhideReplayActionDestination\(animation\.destElement\);[\s\S]*window\.requestAnimationFrame\(\(\) => \{[\s\S]*animateReplacementDraw\(animation\);[\s\S]*\}\);/);
+  assert.match(script, /function queueBombAnimation\(previousRoom, nextRoom\)/);
+  assert.match(script, /isMissedPlayResult\(nextRoom\.lastResult \|\| \{\}\)/);
+  assert.match(script, /resultIdentity\(previousRoom\.lastResult\) === resultIdentity\(nextRoom\.lastResult\)/);
+  assert.match(script, /state\.pendingBombAnimationKey = bombAnimationKey\(nextRoom\);/);
+  assert.match(script, /function updateBombCount\(tableRoom\)/);
+  assert.match(script, /if \(tableRoom !== state\.room\) return;/);
+  assert.match(script, /bombCount\.classList\.add\("is-bomb-hit"\);/);
+  assert.match(styles, /\.score-strip strong\.is-bomb-hit/);
+  assert.match(styles, /@keyframes bomb-count-hit/);
 });
 
 test("card interactions move with one pointer and rotate with wheel or option-drag", () => {
