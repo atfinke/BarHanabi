@@ -1124,20 +1124,13 @@ function replayHighlights(room) {
 
 function actionHighlights(room, event, previousEvent, moveNumberBySeq) {
   if (event.type === "start") return [];
-  if (event.type === "give-clue") {
-    return [highlightBase(room, event, "clue", moveNumberBySeq, {
-      title: `${event.actorSeat} clued ${event.clue?.label || "cards"} to ${event.targetSeat}`,
-      summary: `${event.actorSeat} gave ${event.targetSeat} ${event.clue?.label || "a clue"}.`,
-      actorSeat: event.actorSeat,
-      targetSeat: event.targetSeat,
-      cardIds: event.cardIds || [],
-      clue: event.clue || null
-    })];
-  }
+  if (event.type === "give-clue") return [];
   if (event.type === "discard") {
+    if (event.card?.rank !== 5) return [];
+
     const before = previousEvent?.table || {};
     const restoredHint = Number(event.table?.hints) > Number(before.hints);
-    return [highlightBase(room, event, event.card?.rank === 5 ? "critical-discard" : "discard", moveNumberBySeq, {
+    return [highlightBase(room, event, "critical-discard", moveNumberBySeq, {
       title: `${event.actorSeat} discarded ${cardName(event.card)}`,
       summary: `${event.actorSeat} discarded ${cardName(event.card)}${restoredHint ? " and restored a hint" : ""}.`,
       actorSeat: event.actorSeat,
@@ -1164,7 +1157,9 @@ function actionHighlights(room, event, previousEvent, moveNumberBySeq) {
     };
 
     if (event.playable) {
-      return [highlightBase(room, event, event.card?.rank === 5 ? "firework-complete" : "successful-play", moveNumberBySeq, {
+      if (event.card?.rank !== 5) return [];
+
+      return [highlightBase(room, event, "firework-complete", moveNumberBySeq, {
         ...base,
         title: `${event.actorSeat} played ${cardName(event.card)}`,
         summary: `${event.actorSeat} played ${cardName(event.card)} for ${scoreAfter}/${room.colors.length * 5}.`

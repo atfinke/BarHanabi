@@ -233,21 +233,10 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
     groups[highlight.type].push(highlight);
     return groups;
   }, {});
-  assert.ok(highlightsByType.clue?.length >= 1, "expected a clue highlight");
+  assert.equal(highlightsByType.clue, undefined, "ordinary clue actions should not become highlights");
   assert.ok(highlightsByType["missed-play"]?.length >= 1, "expected a missed-play highlight");
   assert.ok(highlightsByType["game-end"]?.length >= 1, "expected a game-end highlight");
   assert.ok(highlightsByType["wild-card-move"]?.length >= 1, "expected a rainbow movement highlight");
-  const clueHighlight = highlightsByType.clue[0];
-  assert.equal(clueHighlight.seq, clueSnapshotEvent.seq);
-  assert.equal(clueHighlight.moveNumber, 1);
-  assert.equal(clueHighlight.actorSeat, "A");
-  assert.equal(clueHighlight.targetSeat, "B");
-  assert.deepEqual(clueHighlight.cardIds, scenario.clue.cardIds);
-  assert.deepEqual(clueHighlight.clue, {
-    kind: "rank",
-    value: scenario.clue.rank,
-    label: rankLabel(scenario.clue.rank, scenario.clue.cardIds.length)
-  });
   const missedPlayHighlight = highlightsByType["missed-play"][0];
   assert.equal(missedPlayHighlight.seq, playSnapshotEvent.seq);
   assert.equal(missedPlayHighlight.actorSeat, "B");
