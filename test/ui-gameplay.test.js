@@ -7,6 +7,17 @@ function read(path) {
   return fs.readFileSync(path, "utf8");
 }
 
+function findDescendantByClassName(node, className) {
+  if (!node) return null;
+  const classes = String(node.className || "").split(/\s+/);
+  if (classes.includes(className)) return node;
+  for (const child of node.children || []) {
+    const found = findDescendantByClassName(child, className);
+    if (found) return found;
+  }
+  return null;
+}
+
 function fakeElement() {
   const listeners = new Map();
   const classes = new Set();
@@ -1168,7 +1179,7 @@ test("reverse replay action commits state immediately and hides the returning ca
           type: "start",
           hands: { A: [discardedCard], B: [] },
           table: { deckCount: 47, discard: [], fireworks: { white: 0 }, bombs: 0, hints: 7 },
-          knowledge: { A: { cards: {} }, B: { cards: {} } }
+          knowledge: { A: { cards: { [discardedCard.id]: { colors: ["white"], ranks: [2] } } }, B: { cards: {} } }
         },
         {
           seq: 1,
@@ -1197,6 +1208,10 @@ test("reverse replay action commits state immediately and hides the returning ca
   assert.ok(client.state.replay.actionAnimation);
   assert.ok(appendedOverlay?.layoutReadCount > 0);
   assert.equal(targetElement.classList.contains("replay-action-source-hidden"), true);
+  assert.ok(
+    findDescendantByClassName(appendedOverlay, "knowledge-grid"),
+    "expected the flying-card overlay to include a knowledge grid built from the pre-move snapshot"
+  );
 
   client.finishReplayActionFlight(client.state.replay.actionAnimation.key);
 

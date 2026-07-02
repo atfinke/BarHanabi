@@ -1182,7 +1182,9 @@ function animateReplayActionForwardTransition(plan) {
     return false;
   }
   const overlay = createActionCardOverlay(snapshot, {
-    knowledgeGrid: snapshot.concealed ? replayActionOverlayKnowledgeGrid(plan, plan.event) : null
+    knowledgeGrid: snapshot.concealed
+      ? replayActionOverlayKnowledgeGrid(plan, replayTimelineEvents()[plan.fromIndex])
+      : null
   });
   overlay.classList.add("replay-action-overlay");
   const ghost = plan.result.type === "firework" ? createFireworkGhost(plan.result) : null;
@@ -1330,7 +1332,9 @@ function animateReplayActionReverseTransition(plan) {
     concealed: false
   };
   const overlay = createActionCardOverlay(snapshot, {
-    knowledgeGrid: shouldConcealAtHand ? replayActionOverlayKnowledgeGrid(plan, plan.event) : null
+    knowledgeGrid: shouldConcealAtHand
+      ? replayActionOverlayKnowledgeGrid(plan, replayTimelineEvents()[plan.targetIndex])
+      : null
   });
   overlay.classList.add("replay-action-overlay", "replay-transform-overlay");
   placeReplayReverseActionOverlay(overlay, startRect);
