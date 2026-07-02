@@ -50,6 +50,12 @@ async function postAction(payload) {
   return { response, body };
 }
 
+async function readReplay(code) {
+  const response = await fetch(`${BASE}/api/replay?code=${encodeURIComponent(code)}`);
+  const body = await response.json();
+  return { response, body };
+}
+
 async function createRoomWithPlayableACard() {
   for (let attempt = 0; attempt < 30; attempt += 1) {
     const room = await fetch(`${BASE}/api/rooms`, { method: "POST" }).then((response) => response.json());
@@ -600,6 +606,76 @@ test("drawing the last deck card starts one final turn per player", async (t) =>
 
   const blockedAfterEnd = await discardFirstCard(room.code, secondFinalTurn.body);
   assert.equal(blockedAfterEnd.response.status, 400, JSON.stringify(blockedAfterEnd.body));
+});
+
+test("a game-ending final clue snapshots post-end state before the end-game event", async (t) => {
+  const server = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: { ...process.env, PORT: String(PORT) },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  t.after(() => server.kill("SIGTERM"));
+  await waitForServer(server);
+
+  const room = await createRoom();
+  let state = await readState(room.code, "A");
+
+  while (state.deckCount > 0) {
+    const discarded = await discardFirstCard(room.code, state);
+    assert.equal(discarded.response.status, 200, JSON.stringify(discarded.body));
+    state = discarded.body;
+  }
+
+  assert.equal(state.status, "playing");
+  assert.equal(state.deckCount, 0);
+  assert.equal(state.finalTurnsRemaining, 2);
+  assert.equal(state.endReason, null);
+
+  const firstFinalSeat = state.turnSeat;
+  const firstFinalTargetSeat = firstFinalSeat === "A" ? "B" : "A";
+  const firstFinalState = await readState(room.code, firstFinalSeat);
+  const firstFinalClue = firstLegalClueForTarget(firstFinalState, firstFinalTargetSeat);
+  const firstFinalTurn = await postAction({
+    code: room.code,
+    viewerSeat: firstFinalSeat,
+    type: "give-clue",
+    targetSeat: firstFinalTargetSeat,
+    cardIds: firstFinalClue.cardIds,
+    clue: firstFinalClue.clue
+  });
+
+  assert.equal(firstFinalTurn.response.status, 200, JSON.stringify(firstFinalTurn.body));
+  assert.equal(firstFinalTurn.body.status, "playing");
+  assert.equal(firstFinalTurn.body.finalTurnsRemaining, 1);
+
+  const secondFinalSeat = firstFinalTurn.body.turnSeat;
+  const secondFinalTargetSeat = secondFinalSeat === "A" ? "B" : "A";
+  assert.ok(firstFinalTurn.body.hints > 0, "actor needs a hint token to give the game-ending clue");
+  const secondFinalState = await readState(room.code, secondFinalSeat);
+  const secondFinalClue = firstLegalClueForTarget(secondFinalState, secondFinalTargetSeat);
+  const secondFinalTurn = await postAction({
+    code: room.code,
+    viewerSeat: secondFinalSeat,
+    type: "give-clue",
+    targetSeat: secondFinalTargetSeat,
+    cardIds: secondFinalClue.cardIds,
+    clue: secondFinalClue.clue
+  });
+
+  assert.equal(secondFinalTurn.response.status, 200, JSON.stringify(secondFinalTurn.body));
+  assert.equal(secondFinalTurn.body.status, "ended");
+  assert.equal(secondFinalTurn.body.endReason, "deck");
+  assert.equal(secondFinalTurn.body.finalTurnsRemaining, 0);
+
+  const replay = await readReplay(room.code);
+  assert.equal(replay.response.status, 200, JSON.stringify(replay.body));
+  const eventTypes = replay.body.actionEvents.map((event) => event.type);
+  const lastClueIndex = eventTypes.lastIndexOf("give-clue");
+  assert.notEqual(lastClueIndex, -1, "expected a give-clue event in the replay");
+  const gameEndingClueEvent = replay.body.actionEvents[lastClueIndex];
+  assert.equal(gameEndingClueEvent.actorSeat, secondFinalSeat);
+  assert.equal(gameEndingClueEvent.table.status, "ended", "the ending clue snapshot is post-endGame");
+  assert.equal(eventTypes[lastClueIndex + 1], "end-game", "end-game immediately follows the game-ending clue");
 });
 
 test("three bombs allow three failed plays before game over", async (t) => {
