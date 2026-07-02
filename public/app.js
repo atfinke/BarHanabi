@@ -78,7 +78,7 @@ const state = {
   lastAnimatedResultKey: "",
   discardRenderKey: "",
   fireworkRenderKey: "",
-  tableStateHold: null,
+  liveActionAnimation: null,
   pendingDrawAnimation: null,
   toastTimer: null,
   clueChooserResolve: null,
@@ -581,7 +581,7 @@ function leaveRoom(message) {
   state.currentCode = null;
   state.room = null;
   state.deckRevealRenderKey = null;
-  state.tableStateHold = null;
+  state.liveActionAnimation = null;
   state.pendingDrawAnimation = null;
   state.seenCardIds.clear();
   resetReplayState({ update: false });
@@ -631,7 +631,8 @@ function applyRoomState(nextRoom) {
   if (nextRoom.status !== "ended" && state.replay.data) {
     resetReplayState({ update: false });
   }
-  if (animation && previousTableRoom) {
+  if (animation) {
+    animation.ghost = animation.result.type === "firework" ? createFireworkGhost(animation.result) : null;
     if (animation.replacement) {
       state.pendingDrawAnimation = {
         key: animation.key,
@@ -641,7 +642,6 @@ function applyRoomState(nextRoom) {
     } else {
       clearPendingDrawAnimation(animation.key, { update: false });
     }
-    holdTableStateForAnimation(animation.key, previousTableRoom);
   }
   state.room = nextRoom;
   if (state.room.status === "ended") {
@@ -652,15 +652,18 @@ function applyRoomState(nextRoom) {
   setConnection(true);
   if (deferRenderForDrag) {
     state.pendingRoom = state.room;
-    if (animation && !animateActionResult(animation)) {
-      releaseTableStateHold(animation.key);
-      clearPendingDrawAnimation(animation.key);
+    if (animation) {
+      renderActiveDragSafeState();
+      if (!animateActionResult(animation)) {
+        animation.ghost?.remove();
+        clearPendingDrawAnimation(animation.key);
+      }
     }
     return;
   }
   render();
   if (animation && !animateActionResult(animation)) {
-    releaseTableStateHold(animation.key);
+    animation.ghost?.remove();
     clearPendingDrawAnimation(animation.key);
   }
 }
@@ -845,7 +848,7 @@ function tableDisplayRoom() {
   if (replayIsOpen()) {
     return replayRoom();
   }
-  return state.tableStateHold?.room || state.room;
+  return state.room;
 }
 
 function replayIsOpen() {
@@ -1037,7 +1040,7 @@ function resetReplayState(options = {}) {
 }
 
 function liveActionAnimationActive() {
-  return Boolean(state.tableStateHold || state.pendingDrawAnimation);
+  return Boolean(state.liveActionAnimation || state.pendingDrawAnimation);
 }
 
 function ensureReplayOpenAtLatest() {
@@ -1250,7 +1253,7 @@ function animateReplayActionForwardTransition(plan) {
   render();
 
   const path = actionResultPath(plan.result);
-  const destElement = replayActionResultElement(plan.result);
+  const destElement = actionResultElement(plan.result);
   if (!path || !destElement) {
     state.replay.actionAnimation = null;
     gameView.dataset.replayAction = "idle";
@@ -1400,7 +1403,7 @@ function replayActionOverlayKnowledgeGrid(plan, event) {
   return knowledge ? renderKnowledgeGrid(card, knowledge) : null;
 }
 
-function replayActionResultElement(result) {
+function actionResultElement(result) {
   if (result.type === "firework") {
     return fireworkElementForColor(result.card.color);
   }
@@ -1502,27 +1505,6 @@ function unhideReplayActionDestination(element) {
     element.classList.remove("last-result-highlight");
     element.getBoundingClientRect();
     element.classList.add("last-result-highlight");
-  }
-}
-
-function holdTableStateForAnimation(key, room) {
-  state.tableStateHold = {
-    key,
-    room: { ...room, lastResult: null }
-  };
-}
-
-function releaseTableStateHold(key) {
-  if (!state.tableStateHold || state.tableStateHold.key !== key) return;
-  state.tableStateHold = null;
-  if (state.room) {
-    ensureReplayOpenAtLatest();
-    if (state.activeDrag) {
-      state.pendingRoom = state.room;
-      renderActiveDragSafeState();
-    } else {
-      render();
-    }
   }
 }
 
@@ -2583,8 +2565,8 @@ function resetLocalSelections(options = {}) {
   state.activeDrag = null;
   state.pendingAction = false;
   state.pendingRoom = null;
-  if (!options.keepTableStateHold) {
-    state.tableStateHold = null;
+  if (!options.keepActionAnimations) {
+    state.liveActionAnimation = null;
     state.pendingDrawAnimation = null;
   }
   if (options.update !== false) {
@@ -2687,7 +2669,7 @@ async function actionSelected(seat, type) {
   const updated = await action({ type, seat, cardId: card.id });
   state.pendingAction = false;
   if (updated) {
-    resetLocalSelections({ update: false, keepTableStateHold: true });
+    resetLocalSelections({ update: false, keepActionAnimations: true });
     applyRoomState(updated);
   } else {
     updateActionButtons();
@@ -2726,7 +2708,7 @@ async function debugPlayValid(options = {}) {
       cardId
     }
   });
-  resetLocalSelections({ update: false, keepTableStateHold: true });
+  resetLocalSelections({ update: false, keepActionAnimations: true });
   applyRoomState(updated);
   return updated;
 }
@@ -3032,7 +3014,7 @@ function actionAnimationSnapshot(nextRoom) {
 
 function canAnimateActionResultWithActiveDrag(nextRoom) {
   if (!state.activeDrag) return true;
-  if (state.tableStateHold) return false;
+  if (state.liveActionAnimation) return false;
 
   const result = nextRoom?.lastResult;
   if (!result?.actorSeat || !result.cardId) return false;
@@ -3100,25 +3082,32 @@ function rectSnapshot(rect) {
   };
 }
 
-function animateActionResult(snapshot) {
-  if (!snapshot) return false;
+function animateActionResult(animation) {
+  if (!animation) return false;
 
-  const path = actionResultPath(snapshot.result);
-  if (!path) return false;
+  const path = actionResultPath(animation.result);
+  const destElement = actionResultElement(animation.result);
+  if (!path || !destElement) return false;
 
-  state.lastAnimatedResultKey = snapshot.key;
-  const overlay = createActionCardOverlay(snapshot);
+  state.lastAnimatedResultKey = animation.key;
+  state.liveActionAnimation = animation;
+  animation.destElement = destElement;
+  destElement.classList.add("replay-action-source-hidden");
+  if (animation.ghost) {
+    document.body.append(animation.ghost);
+  }
+  const overlay = createActionCardOverlay(animation);
   document.body.append(overlay);
 
   window.requestAnimationFrame(() => {
     overlay.classList.add("is-revealed");
   });
 
-  const revealDelay = snapshot.concealed ? 1100 : 700;
+  const revealDelay = animation.concealed ? 1100 : 700;
   window.setTimeout(() => {
-    const moveDuration = moveActionResultOverlay(overlay, snapshot.startRect, path);
+    const moveDuration = moveActionResultOverlay(overlay, animation.startRect, path);
     window.setTimeout(() => {
-      finishActionOverlay(snapshot, overlay);
+      finishActionOverlay(animation, overlay);
     }, moveDuration + ACTION_SETTLE_MS);
   }, revealDelay);
 
@@ -3308,11 +3297,23 @@ function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
-function finishActionOverlay(snapshot, overlay) {
+function finishActionOverlay(animation, overlay) {
   overlay.remove();
-  releaseTableStateHold(snapshot.key);
+  animation.ghost?.remove();
+  unhideReplayActionDestination(animation.destElement);
+  if (state.liveActionAnimation?.key === animation.key) {
+    state.liveActionAnimation = null;
+  }
+  if (!animation.replacement && state.room) {
+    ensureReplayOpenAtLatest();
+    if (state.activeDrag) {
+      renderActiveDragSafeState();
+    } else if (replayIsOpen()) {
+      render();
+    }
+  }
   window.requestAnimationFrame(() => {
-    animateReplacementDraw(snapshot);
+    animateReplacementDraw(animation);
   });
 }
 

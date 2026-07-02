@@ -664,7 +664,7 @@ test("action result received during drag does not pin table display to previous 
   client.applyRoomState(nextRoom);
 
   assert.equal(client.state.pendingRoom, nextRoom);
-  assert.equal(client.state.tableStateHold, null);
+  assert.equal(client.state.liveActionAnimation, null);
   assert.equal(client.tableDisplayRoom(), nextRoom);
 });
 
@@ -713,11 +713,33 @@ test("independent opponent action can animate during local drag", () => {
   client.state.room = previousRoom;
   client.state.activeDrag = { seat: "A", cardId: "dragged-card" };
   client.opponentHand.querySelectorAll = () => [visibleCardElement(actedCard.id)];
+  const miniClasses = new Set();
+  const miniCard = {
+    dataset: { cardId: actedCard.id },
+    offsetWidth: 30,
+    offsetHeight: 48,
+    classList: {
+      add: (...names) => names.forEach((name) => miniClasses.add(name)),
+      remove: (...names) => names.forEach((name) => miniClasses.delete(name)),
+      toggle: (name, force) => {
+        const next = force === undefined ? !miniClasses.has(name) : Boolean(force);
+        if (next) miniClasses.add(name); else miniClasses.delete(name);
+        return next;
+      },
+      contains: (name) => miniClasses.has(name)
+    },
+    setAttribute() {},
+    replaceChildren() {},
+    getBoundingClientRect: () => ({ left: 200, top: 20, width: 30, height: 48 })
+  };
+  client.document.querySelectorAll = (selector) => (selector === ".mini-card" ? [miniCard] : []);
 
   client.applyRoomState(nextRoom);
 
   assert.equal(client.state.pendingRoom, nextRoom);
-  assert.equal(JSON.stringify(client.state.tableStateHold?.room), JSON.stringify(previousRoom));
+  assert.equal(client.tableDisplayRoom(), nextRoom);
+  assert.ok(client.state.liveActionAnimation);
+  assert.equal(client.state.liveActionAnimation.destElement, miniCard);
   assert.match(client.state.lastAnimatedResultKey, /TEST:2:B:discard:discard:played-card:1/);
 });
 
@@ -810,10 +832,10 @@ test("action card animation hides table handoff and deflects missed plays", () =
   assert.match(script, /requestAnimationFrame\(step\)/);
   assert.match(script, /fireworkElementForColor\(result\.card\.color\)/);
   assert.match(script, /discardElementForCard\(result\.card\.id\) \|\| discardEndTargetRect\(result\.card\)/);
-  assert.match(script, /function finishActionOverlay\(snapshot, overlay\)/);
+  assert.match(script, /function finishActionOverlay\(animation, overlay\)/);
   assert.match(script, /const DISCARD_CARD_WIDTH = 34;/);
   assert.match(script, /const DISCARD_CARD_HEIGHT = DISCARD_CARD_WIDTH \* 510 \/ 322;/);
-  assert.match(script, /overlay\.remove\(\);[\s\S]*releaseTableStateHold\(snapshot\.key\);[\s\S]*window\.requestAnimationFrame\(\(\) => \{[\s\S]*animateReplacementDraw\(snapshot\);[\s\S]*\}\);/);
+  assert.match(script, /overlay\.remove\(\);\s*animation\.ghost\?\.remove\(\);\s*unhideReplayActionDestination\(animation\.destElement\);[\s\S]*window\.requestAnimationFrame\(\(\) => \{[\s\S]*animateReplacementDraw\(animation\);[\s\S]*\}\);/);
 });
 
 test("card interactions move with one pointer and rotate with wheel or option-drag", () => {
@@ -1206,9 +1228,9 @@ test("reverse replay action overlay moves without changing layout properties", (
 test("replay auto-open defers to the live end-of-game animation", () => {
   const script = read("public/app.js");
 
-  assert.match(script, /function liveActionAnimationActive\(\) \{\s*return Boolean\(state\.tableStateHold \|\| state\.pendingDrawAnimation\);/);
+  assert.match(script, /function liveActionAnimationActive\(\) \{\s*return Boolean\(state\.liveActionAnimation \|\| state\.pendingDrawAnimation\);/);
   assert.match(script, /if \(liveActionAnimationActive\(\)\) return;\s*openReplayAtLatest\(\{ update: false \}\);/);
-  assert.match(script, /state\.tableStateHold = null;\s*if \(state\.room\) \{\s*ensureReplayOpenAtLatest\(\);/);
+  assert.match(script, /if \(!animation\.replacement && state\.room\) \{\s*ensureReplayOpenAtLatest\(\);/);
   assert.match(script, /state\.pendingDrawAnimation = null;\s*if \(options\.update !== false && state\.room\) \{\s*ensureReplayOpenAtLatest\(\);/);
 });
 
