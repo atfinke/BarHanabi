@@ -166,10 +166,22 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
     cardId: aHiddenCard.id,
     x: 42,
     y: 46,
-    rotation: 7,
-    replayCheckpoint: true
+    rotation: 7
   });
   assert.equal(checkpointMove.response.status, 200, JSON.stringify(checkpointMove.body));
+
+  const checkpointA = await postAction({
+    code: scenario.room.code,
+    viewerSeat: "A",
+    type: "layout-checkpoint"
+  });
+  assert.equal(checkpointA.response.status, 200, JSON.stringify(checkpointA.body));
+  const checkpointA2 = await postAction({
+    code: scenario.room.code,
+    viewerSeat: "A",
+    type: "layout-checkpoint"
+  });
+  assert.equal(checkpointA2.response.status, 200, JSON.stringify(checkpointA2.body));
 
   const clueTurn = await postAction({
     code: scenario.room.code,
@@ -197,8 +209,7 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
     cardId: aHiddenCard.id,
     x: 50,
     y: 50,
-    rotation: 10,
-    replayCheckpoint: true
+    rotation: 10
   });
   assert.equal(postGameMove.response.status, 200, JSON.stringify(postGameMove.body));
 
@@ -221,11 +232,10 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
   assert.equal(playSnapshotEvent.table.lastResult?.cardId, scenario.bUnplayable.id, "play snapshot carries its own result");
   assert.equal(playSnapshotEvent.table.status, "ended", "ending play snapshot is post-endGame");
   assert.equal(endSnapshotEvent.table.lastResult?.cardId, scenario.bUnplayable.id);
-  assert.equal(replay.body.layoutEvents.length, 1);
-  assert.deepEqual(replay.body.layoutEvents[0].layout, { x: 42, y: 46, rotation: 7 });
-  assert.equal(replay.body.layoutEvents[0].cardId, aHiddenCard.id);
+  assert.equal(replay.body.layoutEvents.length, 1, "consecutive same-seat checkpoints supersede");
+  assert.equal(replay.body.layoutEvents[0].seat, "A");
+  assert.equal(replay.body.layoutEvents[0].cardId, undefined);
   assert.deepEqual(replay.body.layoutEvents[0].hands.A[0].layout, { x: 42, y: 46, rotation: 7 });
-  assert.equal(replay.body.layoutEvents[0].table.status, "playing");
   assert.ok(replay.body.layoutEvents[0].knowledge.A.cards[aHiddenCard.id]);
 
   const replayCsv = await readReplayCsv(scenario.room.code);

@@ -264,18 +264,31 @@ function appendActionEvent(room, type, payload = {}, seq = nextReplaySeq(room)) 
   room.actionEvents.sort((a, b) => a.seq - b.seq);
 }
 
-function appendLayoutEvent(room, player, card, snapshot = replaySnapshot(room)) {
-  room.layoutEvents.push({
+function latestReplayEvent(room) {
+  const lastAction = room.actionEvents[room.actionEvents.length - 1];
+  const lastLayout = room.layoutEvents[room.layoutEvents.length - 1];
+  if (!lastLayout) return lastAction || null;
+  if (!lastAction) return lastLayout;
+  return lastAction.seq > lastLayout.seq ? lastAction : lastLayout;
+}
+
+function appendLayoutEvent(room, player) {
+  const snapshot = replaySnapshot(room);
+  const latest = latestReplayEvent(room);
+  const event = {
     seq: nextReplaySeq(room),
     at: Date.now(),
     type: "layout",
     seat: player.seat,
-    cardId: card.id,
-    layout: { ...card.layout },
     hands: snapshot.hands,
     table: snapshot.table,
     knowledge: snapshot.knowledge
-  });
+  };
+  if (latest && latest.type === "layout" && latest.seat === player.seat) {
+    room.layoutEvents[room.layoutEvents.length - 1] = event;
+    return;
+  }
+  room.layoutEvents.push(event);
 }
 
 function buildReplayKnowledge(room) {
@@ -858,9 +871,12 @@ function handleAction(room, action) {
       y: clamp(layout.y, 24, 76),
       rotation: clamp(layout.rotation, -145, 145)
     };
-    if (action.replayCheckpoint === true && room.status !== "ended") {
-      appendLayoutEvent(room, player, card);
-    }
+    touch(room);
+    return room;
+  }
+
+  if (type === "layout-checkpoint") {
+    appendLayoutEvent(room, player);
     touch(room);
     return room;
   }
@@ -1144,7 +1160,7 @@ function replayCsv(room) {
   for (const event of events) {
     rows.push(csvRow(eventCsvFields(room, event)));
     if (event.type === "layout") {
-      rows.push(csvRow(layoutCsvFields(room, event)));
+      rows.push(...layoutCheckpointCsvRows(room, event));
     }
     rows.push(...handCsvRows(room, event));
   }
@@ -1192,20 +1208,24 @@ function eventCsvFields(room, event) {
   };
 }
 
-function layoutCsvFields(room, event) {
-  const card = snapshotCard(event, event.seat, event.cardId);
-  return {
-    ...eventCsvFields(room, event),
-    row_type: "layout_checkpoint",
-    hand_seat: event.seat,
-    hand_index: snapshotCardIndex(event, event.seat, event.cardId),
-    card_id: event.cardId,
-    card_color: card?.color,
-    card_rank: card?.rank,
-    x: event.layout?.x,
-    y: event.layout?.y,
-    rotation: event.layout?.rotation
-  };
+function layoutCheckpointCsvRows(room, event) {
+  const rows = [];
+  const hand = event.hands?.[event.seat] || [];
+  hand.forEach((card, index) => {
+    rows.push(csvRow({
+      ...eventCsvFields(room, event),
+      row_type: "layout_checkpoint",
+      hand_seat: event.seat,
+      hand_index: index,
+      card_id: card.id,
+      card_color: card.color,
+      card_rank: card.rank,
+      x: card.layout?.x,
+      y: card.layout?.y,
+      rotation: card.layout?.rotation
+    }));
+  });
+  return rows;
 }
 
 function handCsvRows(room, event) {
