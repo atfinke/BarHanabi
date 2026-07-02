@@ -859,21 +859,16 @@ function replayTimelineEvents() {
   const data = state.replay.data;
   if (!data) return [];
 
-  const actions = (data.actionEvents || []).map((event) => ({
-    ...event,
-    timelineType: "action"
-  }));
+  const actions = (data.actionEvents || [])
+    .filter((event) => event.type !== "end-game")
+    .map((event) => ({ ...event, timelineType: "action" }));
+  if (!state.replay.settings?.showLayoutCheckpoints) {
+    return actions;
+  }
   const layouts = (data.layoutEvents || [])
     .filter((event) => event.hands && event.table && event.knowledge)
-    .map((event) => ({
-      ...event,
-      timelineType: "layout"
-    }));
-  if (state.replay.settings?.showLayoutCheckpoints) {
-    return [...actions, ...layouts].sort((a, b) => a.seq - b.seq);
-  }
-
-  return foldLayoutCheckpointsIntoActions(actions, layouts);
+    .map((event) => ({ ...event, timelineType: "layout" }));
+  return [...actions, ...layouts].sort((a, b) => a.seq - b.seq);
 }
 
 function setReplayLayoutCheckpointsVisible(show, options = {}) {
@@ -897,43 +892,6 @@ function setReplayLayoutCheckpointsVisible(show, options = {}) {
   }
 }
 
-function foldLayoutCheckpointsIntoActions(actions, layouts) {
-  const sortedActions = [...actions].sort((a, b) => a.seq - b.seq);
-  const sortedLayouts = [...layouts].sort((a, b) => a.seq - b.seq);
-  const latestLayoutsByCardId = new Map();
-  let layoutIndex = 0;
-
-  return sortedActions.map((event) => {
-    while (layoutIndex < sortedLayouts.length && sortedLayouts[layoutIndex].seq < event.seq) {
-      rememberSnapshotLayouts(latestLayoutsByCardId, sortedLayouts[layoutIndex]);
-      layoutIndex += 1;
-    }
-    return replayEventWithLayouts(event, latestLayoutsByCardId);
-  });
-}
-
-function rememberSnapshotLayouts(latestLayoutsByCardId, event) {
-  for (const hand of Object.values(event.hands || {})) {
-    for (const card of hand) {
-      if (card.layout) {
-        latestLayoutsByCardId.set(card.id, { ...card.layout });
-      }
-    }
-  }
-}
-
-function replayEventWithLayouts(event, latestLayoutsByCardId) {
-  if (latestLayoutsByCardId.size === 0 || !event.hands) return event;
-
-  const hands = Object.fromEntries(Object.entries(event.hands).map(([seat, hand]) => [
-    seat,
-    hand.map((card) => {
-      const layout = latestLayoutsByCardId.get(card.id);
-      return layout ? { ...card, layout: { ...layout } } : card;
-    })
-  ]));
-  return { ...event, hands };
-}
 
 function currentReplayEvent() {
   const events = replayTimelineEvents();
@@ -976,9 +934,12 @@ function replayRoom() {
 function replayStatusText() {
   const events = replayTimelineEvents();
   if (events.length === 0) return "Replay";
-  const event = currentReplayEvent();
-  const suffix = event?.timelineType === "layout" ? " Layout" : "";
-  return `Replay${suffix}`;
+  const index = clamp(state.replay.index, 0, events.length - 1);
+  const moveNumber = events.slice(0, index + 1).filter((e) => e.timelineType === "action" && e.type !== "start").length;
+  const event = events[index];
+  if (event.type === "start") return "Replay · Start";
+  const suffix = event.timelineType === "layout" ? " · Layout" : "";
+  return `Replay · Move ${moveNumber}${suffix}`;
 }
 
 function renderReplayPanel() {

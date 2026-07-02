@@ -1268,59 +1268,33 @@ test("replay discard targeting uses the displayed replay snapshot", () => {
   assert.equal(client.discardBucketForCard(discardedCard), client.neededDiscardPile);
 });
 
-test("hidden replay setting folds layout checkpoints into action steps", () => {
+test("replay timeline shows start plus moves, filtering layouts and end-game", () => {
   const client = loadClientForUiStateTest();
-  const layoutSnapshot = {
-    hands: {
-      A: [{ id: "a1", color: "red", rank: 1, layout: { x: 42, y: 44, rotation: 12 } }],
-      B: [{ id: "b1", color: "blue", rank: 2, layout: { x: 50, y: 50, rotation: 0 } }]
-    },
-    table: { deckCount: 40, score: 0, hints: 7, bombs: 0 },
-    knowledge: { A: { cards: {} }, B: { cards: {} } }
-  };
   client.state.replay.data = {
     actionEvents: [
-      {
-        seq: 1,
-        type: "give-clue",
-        hands: {
-          A: [{ id: "a1", color: "red", rank: 1, layout: { x: 20, y: 30, rotation: 0 } }],
-          B: [{ id: "b1", color: "blue", rank: 2, layout: { x: 50, y: 50, rotation: 0 } }]
-        },
-        table: { deckCount: 40, score: 0, hints: 7, bombs: 0 },
-        knowledge: { A: { cards: {} }, B: { cards: {} } }
-      },
-      {
-        seq: 3,
-        type: "play",
-        hands: {
-          A: [{ id: "a1", color: "red", rank: 1, layout: { x: 20, y: 30, rotation: 0 } }],
-          B: [{ id: "b1", color: "blue", rank: 2, layout: { x: 50, y: 50, rotation: 0 } }]
-        },
-        table: { deckCount: 40, score: 0, hints: 7, bombs: 0 },
-        knowledge: { A: { cards: {} }, B: { cards: {} } }
-      }
+      { seq: 1, type: "start", hands: {}, table: {}, knowledge: {} },
+      { seq: 2, type: "play", result: { action: "play" }, hands: {}, table: {}, knowledge: {} },
+      { seq: 4, type: "end-game", hands: {}, table: {}, knowledge: {} }
     ],
     layoutEvents: [
-      { seq: 2, type: "layout", ...layoutSnapshot }
+      { seq: 3, type: "layout", seat: "A", hands: {}, table: {}, knowledge: {} }
     ]
   };
 
-  let events = client.replayTimelineEvents();
-  assert.deepEqual(Array.from(events, (event) => event.type), ["give-clue", "play"]);
-  assert.equal(events[1].hands.A[0].layout.x, 42);
-  assert.equal(events[1].hands.A[0].layout.rotation, 12);
+  const r1 = client.replayTimelineEvents().map((e) => e.type);
+  const e1 = ["start", "play"];
+  assert.equal(r1.length, e1.length, `First timeline length should be 2, got ${r1.length}`);
+  for (let i = 0; i < r1.length; i++) {
+    assert.equal(r1[i], e1[i], `Element ${i} should be ${e1[i]}, got ${r1[i]}`);
+  }
 
   client.setReplayLayoutCheckpointsVisible(true, { update: false });
-  events = client.replayTimelineEvents();
-  assert.deepEqual(Array.from(events, (event) => event.type), ["give-clue", "layout", "play"]);
-
-  client.state.replay.index = 1;
-  client.setReplayLayoutCheckpointsVisible(false, { update: false });
-  events = client.replayTimelineEvents();
-  assert.deepEqual(Array.from(events, (event) => event.type), ["give-clue", "play"]);
-  assert.equal(client.state.replay.index, 1);
-  assert.equal(events[1].hands.A[0].layout.x, 42);
+  const r2 = client.replayTimelineEvents().map((e) => e.type);
+  const e2 = ["start", "play", "layout"];
+  assert.equal(r2.length, e2.length, `Second timeline length should be 3, got ${r2.length}`);
+  for (let i = 0; i < r2.length; i++) {
+    assert.equal(r2[i], e2[i], `Element ${i} should be ${e2[i]}, got ${r2[i]}`);
+  }
 });
 
 test("rainbow cards are included as a sixth suit", () => {
