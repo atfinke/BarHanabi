@@ -116,7 +116,14 @@ function makeRoom(code = createRoomCode(), rawSettings = {}, options = {}) {
       { seat: "A", name: "Player A", hand: [] },
       { seat: "B", name: "Player B", hand: [] }
     ],
-    log: []
+    log: [],
+    replaySeq: 0,
+    actionEvents: [],
+    layoutEvents: [],
+    knowledge: {
+      A: {},
+      B: {}
+    }
   };
 
   for (let i = 0; i < HAND_SIZE; i += 1) {
@@ -125,6 +132,7 @@ function makeRoom(code = createRoomCode(), rawSettings = {}, options = {}) {
     }
   }
 
+  appendActionEvent(room, "start", {});
   addLog(room, "New game started.");
   return room;
 }
@@ -186,6 +194,13 @@ function publicCard(card) {
   };
 }
 
+function replayCard(card) {
+  return {
+    ...publicCard(card),
+    layout: card.layout
+  };
+}
+
 function actionResult(type, action, player, card) {
   return {
     type,
@@ -196,6 +211,242 @@ function actionResult(type, action, player, card) {
     rank: card.rank,
     card: publicCard(card)
   };
+}
+
+function nextReplaySeq(room) {
+  room.replaySeq += 1;
+  return room.replaySeq;
+}
+
+function replayHandsSnapshot(room) {
+  return Object.fromEntries(room.players.map((player) => [
+    player.seat,
+    player.hand.map(replayCard)
+  ]));
+}
+
+function replayTableSnapshot(room) {
+  return {
+    deckCount: room.deck.length,
+    discard: room.discard.map(replayCard),
+    fireworks: { ...room.fireworks },
+    bombs: room.bombs,
+    hints: room.hints,
+    turnSeat: room.turnSeat,
+    status: room.status,
+    endReason: room.endReason,
+    finalTurnsRemaining: room.finalTurnsRemaining,
+    score: scoreRoom(room),
+    lastResult: room.lastResult
+  };
+}
+
+function replaySnapshot(room) {
+  return {
+    hands: replayHandsSnapshot(room),
+    table: replayTableSnapshot(room),
+    knowledge: buildReplayKnowledge(room)
+  };
+}
+
+// Callers that may end the game must capture seq before finishTurn/endGame so the sort keeps their event ahead of end-game.
+function appendActionEvent(room, type, payload = {}, seq = nextReplaySeq(room)) {
+  const snapshot = replaySnapshot(room);
+  room.actionEvents.push({
+    seq,
+    at: Date.now(),
+    type,
+    ...payload,
+    hands: snapshot.hands,
+    table: snapshot.table,
+    knowledge: snapshot.knowledge
+  });
+  room.actionEvents.sort((a, b) => a.seq - b.seq);
+}
+
+function latestReplayEvent(room) {
+  const lastAction = room.actionEvents[room.actionEvents.length - 1];
+  const lastLayout = room.layoutEvents[room.layoutEvents.length - 1];
+  if (!lastLayout) return lastAction || null;
+  if (!lastAction) return lastLayout;
+  return lastAction.seq > lastLayout.seq ? lastAction : lastLayout;
+}
+
+function appendLayoutEvent(room, player) {
+  const snapshot = replaySnapshot(room);
+  const latest = latestReplayEvent(room);
+  const event = {
+    seq: nextReplaySeq(room),
+    at: Date.now(),
+    type: "layout",
+    seat: player.seat,
+    hands: snapshot.hands,
+    table: snapshot.table,
+    knowledge: snapshot.knowledge
+  };
+  if (latest && latest.type === "layout" && latest.seat === player.seat) {
+    room.layoutEvents[room.layoutEvents.length - 1] = event;
+    return;
+  }
+  room.layoutEvents.push(event);
+}
+
+function buildReplayKnowledge(room) {
+  return {
+    A: { cards: buildPerspectiveKnowledge(room, "A") },
+    B: { cards: buildPerspectiveKnowledge(room, "B") }
+  };
+}
+
+function buildPerspectiveKnowledge(room, seat) {
+  const player = getPlayer(room, seat);
+  if (!player) return {};
+
+  return Object.fromEntries(player.hand.map((card) => [
+    card.id,
+    cardKnowledge(room, seat, card)
+  ]));
+}
+
+function cardKnowledge(room, seat, card) {
+  const facts = room.knowledge[seat]?.[card.id] || {};
+  const identities = availableIdentitiesForPerspective(room, seat)
+    .filter((identity) => identityMatchesFacts(identity, facts));
+  const colorOrder = new Map(room.colors.map((color, index) => [color.id, index]));
+  const ranks = uniqueSorted(identities.map((identity) => identity.rank), (a, b) => a - b);
+  const colors = uniqueSorted(
+    identities.map((identity) => identity.color),
+    (a, b) => (colorOrder.get(a) ?? 99) - (colorOrder.get(b) ?? 99)
+  );
+
+  return {
+    ranks,
+    colors,
+    identities
+  };
+}
+
+function uniqueSorted(values, sorter) {
+  return [...new Set(values)].sort(sorter);
+}
+
+function identityMatchesFacts(identity, facts) {
+  if (Array.isArray(facts.possibleRanks) && !facts.possibleRanks.includes(identity.rank)) {
+    return false;
+  }
+  if (Array.isArray(facts.excludedRanks) && facts.excludedRanks.includes(identity.rank)) {
+    return false;
+  }
+  if (Array.isArray(facts.possibleColors) && !facts.possibleColors.includes(identity.color)) {
+    return false;
+  }
+  if (Array.isArray(facts.excludedColors) && facts.excludedColors.includes(identity.color)) {
+    return false;
+  }
+  return true;
+}
+
+function availableIdentitiesForPerspective(room, seat) {
+  const remaining = identityCountsForRoom(room);
+  const visibleCards = visibleCardsForPerspective(room, seat);
+
+  for (const card of visibleCards) {
+    decrementIdentityCount(remaining, card);
+  }
+
+  for (const card of room.discard) {
+    decrementIdentityCount(remaining, card);
+  }
+
+  for (const color of room.colors) {
+    const highest = room.fireworks[color.id] || 0;
+    for (let rank = 1; rank <= highest; rank += 1) {
+      decrementIdentityCount(remaining, { color: color.id, rank });
+    }
+  }
+
+  return room.colors.flatMap((color) =>
+    [1, 2, 3, 4, 5]
+      .filter((rank) => (remaining.get(identityKey({ color: color.id, rank })) || 0) > 0)
+      .map((rank) => ({ color: color.id, rank }))
+  );
+}
+
+function identityCountsForRoom(room) {
+  const counts = new Map();
+  const rankCounts = { 1: 3, 2: 2, 3: 2, 4: 2, 5: 1 };
+
+  for (const color of room.colors) {
+    for (const [rank, count] of Object.entries(rankCounts)) {
+      counts.set(identityKey({ color: color.id, rank: Number(rank) }), count);
+    }
+  }
+
+  return counts;
+}
+
+function visibleCardsForPerspective(room, seat) {
+  return room.players
+    .filter((player) => player.seat !== seat)
+    .flatMap((player) => player.hand);
+}
+
+function decrementIdentityCount(counts, card) {
+  const key = identityKey(card);
+  counts.set(key, Math.max(0, (counts.get(key) || 0) - 1));
+}
+
+function identityKey(card) {
+  return `${card.color}:${card.rank}`;
+}
+
+function applyClueKnowledge(room, targetPlayer, selection) {
+  if (!selection?.committed || !selection.clue) return;
+
+  for (const card of targetPlayer.hand) {
+    const facts = ensureKnowledgeFacts(room, targetPlayer.seat, card.id);
+    const selected = selection.cardIds.includes(card.id);
+
+    if (selection.clue.kind === "rank") {
+      if (selected) {
+        facts.possibleRanks = intersectValues(facts.possibleRanks, [selection.clue.value]);
+      } else {
+        facts.excludedRanks = addUnique(facts.excludedRanks, [selection.clue.value]);
+      }
+      continue;
+    }
+
+    const clueColors = colorsForClueKnowledge(room, selection.clue.value);
+    if (selected) {
+      facts.possibleColors = intersectValues(facts.possibleColors, clueColors);
+    } else {
+      facts.excludedColors = addUnique(facts.excludedColors, clueColors);
+    }
+  }
+}
+
+function ensureKnowledgeFacts(room, seat, cardId) {
+  if (!room.knowledge[seat][cardId]) {
+    room.knowledge[seat][cardId] = {};
+  }
+  return room.knowledge[seat][cardId];
+}
+
+function colorsForClueKnowledge(room, colorId) {
+  const colors = [colorId];
+  if (room.colors.some((color) => color.id === "rainbow")) {
+    colors.push("rainbow");
+  }
+  return colors;
+}
+
+function intersectValues(existing, incoming) {
+  if (!Array.isArray(existing)) return [...incoming];
+  return existing.filter((value) => incoming.includes(value));
+}
+
+function addUnique(existing = [], values) {
+  return [...new Set([...existing, ...values])];
 }
 
 function addLog(room, text) {
@@ -508,6 +759,11 @@ function endGame(room, reason) {
     room.finalTurnsRemaining = 0;
   }
   addLog(room, endGameMessage(room, reason));
+  appendActionEvent(room, "end-game", {
+    reason,
+    score: scoreRoom(room),
+    maxScore: room.colors.length * 5
+  });
 }
 
 function endGameMessage(room, reason) {
@@ -579,10 +835,18 @@ function handleAction(room, action) {
     clearCommittedClueForActingPlayer(room, player);
     setClueSelection(room, player, action, { committed: true });
     clearLiveCluePreview(room);
+    applyClueKnowledge(room, getPlayer(room, room.clueSelection.seat), room.clueSelection);
     room.lastResult = null;
     room.hints -= 1;
     addLog(room, `${player.name} gave a clue.`);
+    const seq = nextReplaySeq(room);
     finishTurn(room, player);
+    appendActionEvent(room, "give-clue", {
+      actorSeat: player.seat,
+      targetSeat: room.clueSelection.seat,
+      cardIds: [...room.clueSelection.cardIds],
+      clue: { ...room.clueSelection.clue }
+    }, seq);
     touch(room);
     return room;
   }
@@ -611,6 +875,12 @@ function handleAction(room, action) {
     return room;
   }
 
+  if (type === "layout-checkpoint") {
+    appendLayoutEvent(room, player);
+    touch(room);
+    return room;
+  }
+
   if (type === "fan") {
     player.hand.forEach((card, index) => {
       card.layout = defaultCardLayout(index);
@@ -635,7 +905,16 @@ function handleAction(room, action) {
       room,
       `${player.name} discarded ${cardName(card)}.${replacement ? " Drew a replacement." : ""}`
     );
+    const seq = nextReplaySeq(room);
     finishTurn(room, player, { drewLastCard });
+    appendActionEvent(room, "discard", {
+      actorSeat: player.seat,
+      cardId: card.id,
+      card: replayCard(card),
+      result: room.lastResult,
+      drewReplacement: Boolean(replacement),
+      replacementCard: replacement ? replayCard(replacement) : null
+    }, seq);
     touch(room);
     return room;
   }
@@ -667,23 +946,53 @@ function handleAction(room, action) {
     clearCommittedClueForActingPlayer(room, player);
 
     if (allFireworksComplete(room)) {
+      const seq = nextReplaySeq(room);
       addLog(room, message);
       endGame(room, "perfect");
+      appendActionEvent(room, "play", {
+        actorSeat: player.seat,
+        cardId: card.id,
+        card: replayCard(card),
+        result: room.lastResult,
+        playable: true,
+        drewReplacement: false,
+        replacementCard: null
+      }, seq);
       touch(room);
       return room;
     }
 
     if (exceededBombAllowance) {
+      const seq = nextReplaySeq(room);
       addLog(room, message);
       endGame(room, "strikes");
+      appendActionEvent(room, "play", {
+        actorSeat: player.seat,
+        cardId: card.id,
+        card: replayCard(card),
+        result: room.lastResult,
+        playable: false,
+        drewReplacement: false,
+        replacementCard: null
+      }, seq);
       touch(room);
       return room;
     }
 
     const replacement = drawToHand(room, player, incomingCardLayout(player));
     const drewLastCard = Boolean(replacement) && room.deck.length === 0;
+    const seq = nextReplaySeq(room);
     addLog(room, `${message}${replacement ? " Drew a replacement." : ""}`);
     finishTurn(room, player, { drewLastCard });
+    appendActionEvent(room, "play", {
+      actorSeat: player.seat,
+      cardId: card.id,
+      card: replayCard(card),
+      result: room.lastResult,
+      playable: card.rank === nextRank,
+      drewReplacement: Boolean(replacement),
+      replacementCard: replacement ? replayCard(replacement) : null
+    }, seq);
     touch(room);
     return room;
   }
@@ -752,6 +1061,260 @@ function sendJson(response, statusCode, payload) {
     "cache-control": "no-store"
   });
   response.end(JSON.stringify(payload));
+}
+
+function sendCsv(response, filename, text) {
+  response.writeHead(200, {
+    "content-type": "text/csv; charset=utf-8",
+    "cache-control": "no-store",
+    "content-disposition": `attachment; filename="${filename}"`
+  });
+  response.end(text);
+}
+
+function replayState(room) {
+  return {
+    code: room.code,
+    createdAt: room.createdAt,
+    updatedAt: room.updatedAt,
+    endedAt: room.endedAt,
+    status: room.status,
+    endReason: room.endReason,
+    score: scoreRoom(room),
+    maxScore: room.colors.length * 5,
+    settings: room.settings,
+    colors: room.colors,
+    fireworks: room.fireworks,
+    discard: room.discard.map(replayCard),
+    players: room.players.map((player) => ({
+      seat: player.seat,
+      name: player.name,
+      hand: player.hand.map(replayCard)
+    })),
+    actionEvents: room.actionEvents,
+    layoutEvents: room.layoutEvents
+  };
+}
+
+const REPLAY_CSV_COLUMNS = [
+  "row_type",
+  "event_seq",
+  "event_type",
+  "event_at",
+  "code",
+  "created_at",
+  "ended_at",
+  "actor_seat",
+  "target_seat",
+  "action_card_id",
+  "action_card_color",
+  "action_card_rank",
+  "clue_kind",
+  "clue_value",
+  "clue_label",
+  "clued_card_ids",
+  "result_pile",
+  "result_action",
+  "play_succeeded",
+  "drew_replacement",
+  "replacement_card_id",
+  "hand_seat",
+  "hand_index",
+  "card_id",
+  "card_color",
+  "card_rank",
+  "possible_colors",
+  "possible_ranks",
+  "possible_identities",
+  "layout_x",
+  "layout_y",
+  "layout_rotation",
+  "deck_count",
+  "turn_seat",
+  "status",
+  "final_turns_remaining",
+  "score",
+  "hints",
+  "bombs",
+  "fireworks",
+  "discard_ids",
+  "end_reason",
+  "settings_max_hints",
+  "settings_max_bombs",
+  "include_rainbow",
+  "colors",
+  "max_score",
+  "final_score",
+  "move_number"
+];
+
+function replayCsv(room) {
+  const rows = [REPLAY_CSV_COLUMNS.join(",")];
+  rows.push(csvRow(gameCsvFields(room)));
+
+  const events = [
+    ...room.actionEvents,
+    ...room.layoutEvents
+  ].sort((first, second) => first.seq - second.seq);
+
+  const moveNumberBySeq = buildMoveNumberBySeq(events);
+
+  for (const event of events) {
+    rows.push(csvRow(eventCsvFields(room, event, moveNumberBySeq)));
+    if (event.type === "layout") {
+      rows.push(...layoutCheckpointCsvRows(room, event, moveNumberBySeq));
+    }
+    rows.push(...handCsvRows(room, event, moveNumberBySeq));
+  }
+
+  return `${rows.join("\n")}\n`;
+}
+
+function buildMoveNumberBySeq(events) {
+  const moveNumberBySeq = new Map();
+  let moveNumber = 0;
+  for (const event of events) {
+    if (event.type === "layout" || event.type === "end-game" || event.type === "start") {
+      moveNumberBySeq.set(event.seq, moveNumber);
+    } else {
+      moveNumber += 1;
+      moveNumberBySeq.set(event.seq, moveNumber);
+    }
+  }
+  return moveNumberBySeq;
+}
+
+function gameCsvFields(room) {
+  return {
+    ...roomCsvFields(room),
+    ...tableCsvFields(replayTableSnapshot(room), room),
+    row_type: "game",
+    status: room.status,
+    end_reason: room.endReason
+  };
+}
+
+function eventCsvFields(room, event, moveNumberBySeq) {
+  const card = event.card || null;
+  const replacement = event.replacementCard || null;
+  const result = event.result || {};
+  return {
+    ...roomCsvFields(room),
+    ...tableCsvFields(event.table, room),
+    row_type: "event",
+    event_seq: event.seq,
+    event_type: event.type,
+    event_at: event.at,
+    actor_seat: event.actorSeat || event.seat,
+    target_seat: event.targetSeat,
+    action_card_id: card?.id || event.cardId,
+    action_card_color: card?.color,
+    action_card_rank: card?.rank,
+    clue_kind: event.clue?.kind,
+    clue_value: event.clue?.value,
+    clue_label: event.clue?.label,
+    clued_card_ids: (event.cardIds || []).join("|"),
+    result_pile: result.type,
+    result_action: result.action,
+    play_succeeded: event.playable,
+    drew_replacement: event.drewReplacement,
+    replacement_card_id: replacement?.id,
+    end_reason: event.table?.endReason || event.reason,
+    move_number: moveNumberBySeq.get(event.seq)
+  };
+}
+
+function layoutCheckpointCsvRows(room, event, moveNumberBySeq) {
+  const rows = [];
+  const hand = event.hands?.[event.seat] || [];
+  hand.forEach((card, index) => {
+    rows.push(csvRow({
+      ...eventCsvFields(room, event, moveNumberBySeq),
+      row_type: "layout_checkpoint",
+      hand_seat: event.seat,
+      hand_index: index,
+      card_id: card.id,
+      card_color: card.color,
+      card_rank: card.rank,
+      layout_x: card.layout?.x,
+      layout_y: card.layout?.y,
+      layout_rotation: card.layout?.rotation
+    }));
+  });
+  return rows;
+}
+
+function handCsvRows(room, event, moveNumberBySeq) {
+  const rows = [];
+  for (const seat of ["A", "B"]) {
+    const hand = event.hands?.[seat] || [];
+    const knowledge = event.knowledge?.[seat]?.cards || {};
+    hand.forEach((card, index) => {
+      const cardKnowledge = knowledge[card.id] || {};
+      rows.push(csvRow({
+        ...eventCsvFields(room, event, moveNumberBySeq),
+        row_type: "hand_card",
+        hand_seat: seat,
+        hand_index: index,
+        card_id: card.id,
+        card_color: card.color,
+        card_rank: card.rank,
+        possible_colors: (cardKnowledge.colors || []).join("|"),
+        possible_ranks: (cardKnowledge.ranks || []).join("|"),
+        possible_identities: (cardKnowledge.identities || [])
+          .map((identity) => `${identity.color}-${identity.rank}`)
+          .join("|"),
+        layout_x: card.layout?.x,
+        layout_y: card.layout?.y,
+        layout_rotation: card.layout?.rotation
+      }));
+    });
+  }
+  return rows;
+}
+
+function roomCsvFields(room) {
+  return {
+    code: room.code,
+    created_at: room.createdAt,
+    ended_at: room.endedAt,
+    settings_max_hints: room.settings.maxHints,
+    settings_max_bombs: room.settings.maxBombs,
+    include_rainbow: room.settings.includeRainbow,
+    colors: room.colors.map((color) => color.id).join("|"),
+    max_score: room.colors.length * 5,
+    final_score: scoreRoom(room)
+  };
+}
+
+function tableCsvFields(table = {}, room) {
+  return {
+    deck_count: table.deckCount,
+    turn_seat: table.turnSeat,
+    status: table.status,
+    final_turns_remaining: table.finalTurnsRemaining,
+    score: table.score,
+    hints: table.hints,
+    bombs: table.bombs,
+    fireworks: serializeFireworks(table.fireworks, room.colors),
+    discard_ids: (table.discard || []).map((card) => card.id).join("|"),
+    end_reason: table.endReason
+  };
+}
+
+function serializeFireworks(fireworks = {}, colors) {
+  return colors.map((color) => `${color.id}:${fireworks[color.id] || 0}`).join("|");
+}
+
+function csvRow(values) {
+  return REPLAY_CSV_COLUMNS.map((column) => csvValue(values[column])).join(",");
+}
+
+function csvValue(value) {
+  if (value === undefined || value === null) return "";
+  const text = String(value);
+  if (!/[",\n\r]/.test(text)) return text;
+  return `"${text.replaceAll("\"", "\"\"")}"`;
 }
 
 function readJson(request) {
@@ -840,6 +1403,36 @@ async function router(request, response) {
         return;
       }
       sendJson(response, 200, { code: room.code });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/replay") {
+      const code = String(url.searchParams.get("code") || "").toUpperCase();
+      const room = rooms.get(code);
+      if (!room) {
+        sendJson(response, 404, { error: "Room not found." });
+        return;
+      }
+      if (room.status !== "ended") {
+        sendJson(response, 400, { error: "Replay is available after the game ends." });
+        return;
+      }
+      sendJson(response, 200, replayState(room));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/replay.csv") {
+      const code = String(url.searchParams.get("code") || "").toUpperCase();
+      const room = rooms.get(code);
+      if (!room) {
+        sendJson(response, 404, { error: "Room not found." });
+        return;
+      }
+      if (room.status !== "ended") {
+        sendJson(response, 400, { error: "Replay is available after the game ends." });
+        return;
+      }
+      sendCsv(response, `bar-hanabi-${room.code}-replay.csv`, replayCsv(room));
       return;
     }
 
