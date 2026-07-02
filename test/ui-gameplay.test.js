@@ -7,11 +7,28 @@ function read(path) {
   return fs.readFileSync(path, "utf8");
 }
 
+function findDescendantByClassName(node, className) {
+  if (!node) return null;
+  const classes = String(node.className || "").split(/\s+/);
+  if (classes.includes(className)) return node;
+  for (const child of node.children || []) {
+    const found = findDescendantByClassName(child, className);
+    if (found) return found;
+  }
+  return null;
+}
+
 function fakeElement() {
   const listeners = new Map();
-  return {
+  const classes = new Set();
+  function syncChildEdges(element) {
+    element.firstElementChild = element.children[0] || null;
+    element.lastElementChild = element.children[element.children.length - 1] || null;
+  }
+  const element = {
     checked: false,
     disabled: false,
+    children: [],
     dataset: {},
     style: {
       setProperty() {}
@@ -21,12 +38,27 @@ function fakeElement() {
     textContent: "",
     value: "",
     classList: {
-      add() {},
-      remove() {},
-      contains() {
-        return true;
+      add(...names) {
+        names.forEach((name) => classes.add(name));
       },
-      toggle() {}
+      remove(...names) {
+        names.forEach((name) => classes.delete(name));
+      },
+      contains(name) {
+        return classes.has(name);
+      },
+      toggle(name, force) {
+        const next = force === undefined ? !classes.has(name) : Boolean(force);
+        if (next) {
+          classes.add(name);
+        } else {
+          classes.delete(name);
+        }
+        return next;
+      },
+      toString() {
+        return Array.from(classes).join(" ");
+      }
     },
     addEventListener(type, listener) {
       const current = listeners.get(type) || [];
@@ -40,17 +72,60 @@ function fakeElement() {
       }
       return true;
     },
-    append() {},
-    replaceChildren() {},
-    remove() {},
+    append(...children) {
+      for (const child of children) {
+        child.remove?.();
+        child.parentElement = element;
+        element.children.push(child);
+      }
+      syncChildEdges(element);
+    },
+    replaceChildren(...children) {
+      for (const child of element.children) {
+        child.parentElement = null;
+      }
+      for (const child of children) {
+        child.remove?.();
+        child.parentElement = element;
+      }
+      element.children = children;
+      syncChildEdges(element);
+    },
+    insertBefore(child, current) {
+      child.remove?.();
+      child.parentElement = element;
+      const nextChildren = element.children.filter((item) => item !== child);
+      const index = current ? nextChildren.indexOf(current) : -1;
+      if (index === -1) {
+        nextChildren.push(child);
+      } else {
+        nextChildren.splice(index, 0, child);
+      }
+      element.children = nextChildren;
+      syncChildEdges(element);
+    },
+    remove() {
+      if (!element.parentElement) return;
+      element.parentElement.children = element.parentElement.children.filter((child) => child !== element);
+      syncChildEdges(element.parentElement);
+      element.parentElement = null;
+    },
     querySelectorAll() {
       return [];
     },
+    querySelector() {
+      return null;
+    },
+    contains() {
+      return false;
+    },
     getBoundingClientRect() {
+      element.layoutReadCount = (element.layoutReadCount || 0) + 1;
       return { left: 0, top: 0, width: 100, height: 100 };
     },
     setAttribute() {}
   };
+  return element;
 }
 
 function loadClientForUiStateTest(options = {}) {
@@ -84,6 +159,9 @@ function loadClientForUiStateTest(options = {}) {
         callback(0);
       },
       cancelAnimationFrame() {},
+      matchMedia() {
+        return { matches: false, addEventListener() {}, removeEventListener() {} };
+      },
       setTimeout() {
         animationTimers.push(true);
         return 1;
@@ -132,7 +210,7 @@ function loadClientForUiStateTest(options = {}) {
   };
 
   vm.runInNewContext(
-    `${read("public/app.js")}\nglobalThis.__client = { state, applyRoomState, tableDisplayRoom, updateActionButtons, updateRoomCodeLabel, roomCodeLabel, selfPlayButton, selfDiscardButton, selfHand, opponentHand, hintSetting, bombSetting, rainbowSetting, autoClueToggle, manualRotationToggle, readSetupSettings, handleManualRotationToggle, renderHand, autoRotationForX, scheduledActions, animationTimers };`,
+    `${read("public/app.js")}\nglobalThis.__client = { state, document, applyRoomState, tableDisplayRoom, updateActionButtons, updateRoomCodeLabel, roomCodeLabel, selfPlayButton, selfDiscardButton, selfHand, opponentHand, hintSetting, bombSetting, rainbowSetting, autoClueToggle, manualRotationToggle, replayLayoutStepsToggle, readSetupSettings, handleManualRotationToggle, renderHand, autoRotationForX, replayTimelineEvents, replayActionTransitionPlan, setReplayIndex, finishReplayActionFlight, placeReplayReverseActionOverlay, moveReplayReverseActionOverlay, setReplayLayoutCheckpointsVisible, discardBucketForCard, neededDiscardPile, spentDiscardPile, scheduledActions, animationTimers };`,
     sandbox
   );
   return { ...sandbox.__client, storage };
@@ -231,7 +309,8 @@ test("client restores local player preferences on load", () => {
         bombs: 1,
         rainbow: false,
         autoClue: true,
-        manualRotation: true
+        manualRotation: true,
+        replayLayoutSteps: true
       }),
       "barHanabiSeat:ABCD": "B"
     }
@@ -242,6 +321,8 @@ test("client restores local player preferences on load", () => {
   assert.equal(client.rainbowSetting.checked, false);
   assert.equal(client.autoClueToggle.checked, true);
   assert.equal(client.manualRotationToggle.checked, true);
+  assert.equal(client.replayLayoutStepsToggle.checked, true);
+  assert.equal(client.state.replay.settings.showLayoutCheckpoints, true);
   const setupSettings = client.readSetupSettings();
   assert.equal(setupSettings.hints, 4);
   assert.equal(setupSettings.bombs, 1);
@@ -256,19 +337,22 @@ test("client saves local player preferences when controls change", () => {
   client.rainbowSetting.checked = false;
   client.autoClueToggle.checked = true;
   client.manualRotationToggle.checked = true;
+  client.replayLayoutStepsToggle.checked = true;
 
   client.hintSetting.dispatchEvent("change");
   client.bombSetting.dispatchEvent("change");
   client.rainbowSetting.dispatchEvent("change");
   client.autoClueToggle.dispatchEvent("change");
   client.manualRotationToggle.dispatchEvent("change");
+  client.replayLayoutStepsToggle.dispatchEvent("change");
 
   assert.deepEqual(JSON.parse(client.storage.get("barHanabiPreferences:v1")), {
     hints: 6,
     bombs: 0,
     rainbow: false,
     autoClue: true,
-    manualRotation: true
+    manualRotation: true,
+    replayLayoutSteps: true
   });
 });
 
@@ -332,17 +416,22 @@ test("game settings live in a clue-style popover", () => {
   assert.match(html, /class="settings-controls"[\s\S]*id="resetButton"[\s\S]*Restart/);
   assert.match(html, /for="autoCluePreviewToggle"[\s\S]*Auto Clue[\s\S]*id="autoCluePreviewToggle"/);
   assert.match(html, /for="manualRotationToggle"[\s\S]*Manual Rotation[\s\S]*id="manualRotationToggle"/);
+  assert.match(html, /for="replayLayoutStepsToggle"[\s\S]*Replay Layout Steps[\s\S]*id="replayLayoutStepsToggle"/);
   assert.doesNotMatch(html, /settingsPopover[\s\S]*(hintSetting|bombSetting|rainbowSetting)/);
 
   for (const pattern of [
     /const settingsButton = document\.querySelector\("#settingsButton"\);/,
     /const settingsPopover = document\.querySelector\("#settingsPopover"\);/,
+    /const replayLayoutStepsToggle = document\.querySelector\("#replayLayoutStepsToggle"\);/,
     /settingsButton\.addEventListener\("click", \(\) => toggleSettingsPopover\(\)\);/,
+    /replayLayoutStepsToggle\.addEventListener\("change", \(\) => \{[\s\S]*setReplayLayoutCheckpointsVisible\(replayLayoutStepsToggle\.checked\);[\s\S]*savePlayerPreferences\(\);[\s\S]*\}\);/,
     /function openSettingsPopover\(\)/,
     /function closeSettingsPopover\(\)/,
     /trigger\?\.setAttribute\("aria-expanded", "true"\);/,
     /trigger\?\.setAttribute\("aria-expanded", "false"\);/,
-    /trigger: settingsButton,/
+    /trigger: settingsButton,/,
+    /function setReplayLayoutCheckpointsVisible\(show, options = \{\}\)/,
+    /function renderReplaySettingsControls\(\)/
   ]) {
     assert.match(script, pattern);
   }
@@ -365,7 +454,7 @@ test("ended deck reveal wires a popover from the deck tile", () => {
     /const deckReveal = document\.querySelector\("#deckReveal"\);/,
     /deckTile\.addEventListener\("click", \(\) => openDeckReveal\(\)\);/,
     /function updateDeckRevealState\(room\)/,
-    /const canRevealDeck = room\.status === "ended" && Array\.isArray\(room\.remainingDeck\);/,
+    /const canRevealDeck = room\.status === "ended" && Array\.isArray\(room\.remainingDeck\) && room\.remainingDeck\.length > 0;/,
     /deckTile\.disabled = !canRevealDeck;/,
     /function renderRemainingDeck\(cards\)/,
     /deckRevealGrid\.replaceChildren\(\.\.\.cards\.map\(\(card\) => createMiniCard\(card\)\)\);/
@@ -434,8 +523,8 @@ test("game state shows hints before bombs", () => {
   const script = read("public/app.js");
 
   assert.match(html, /<span>Deck<\/span>[\s\S]*id="deckCount"[\s\S]*<span>Hints<\/span>[\s\S]*id="hintCount"[\s\S]*<span>Bombs<\/span>[\s\S]*id="bombCount"/);
-  assert.match(script, /hintCount\.textContent = `\$\{tableRoom\.hints\}\/\$\{tableRoom\.maxHints\}`;/);
-  assert.match(script, /bombCount\.textContent = `\$\{tableRoom\.bombs\}\/\$\{tableRoom\.maxBombs\}`;/);
+  assert.match(script, /setStatText\(hintCount, `\$\{tableRoom\.hints\}\/\$\{tableRoom\.maxHints\}`\);/);
+  assert.match(script, /setStatText\(bombCount, `\$\{tableRoom\.bombs\}\/\$\{tableRoom\.maxBombs\}`\);/);
 });
 
 test("creator starts as A and joiners default to B", () => {
@@ -586,7 +675,7 @@ test("action result received during drag does not pin table display to previous 
   client.applyRoomState(nextRoom);
 
   assert.equal(client.state.pendingRoom, nextRoom);
-  assert.equal(client.state.tableStateHold, null);
+  assert.equal(client.state.liveActionAnimation, null);
   assert.equal(client.tableDisplayRoom(), nextRoom);
 });
 
@@ -635,11 +724,33 @@ test("independent opponent action can animate during local drag", () => {
   client.state.room = previousRoom;
   client.state.activeDrag = { seat: "A", cardId: "dragged-card" };
   client.opponentHand.querySelectorAll = () => [visibleCardElement(actedCard.id)];
+  const miniClasses = new Set();
+  const miniCard = {
+    dataset: { cardId: actedCard.id },
+    offsetWidth: 30,
+    offsetHeight: 48,
+    classList: {
+      add: (...names) => names.forEach((name) => miniClasses.add(name)),
+      remove: (...names) => names.forEach((name) => miniClasses.delete(name)),
+      toggle: (name, force) => {
+        const next = force === undefined ? !miniClasses.has(name) : Boolean(force);
+        if (next) miniClasses.add(name); else miniClasses.delete(name);
+        return next;
+      },
+      contains: (name) => miniClasses.has(name)
+    },
+    setAttribute() {},
+    replaceChildren() {},
+    getBoundingClientRect: () => ({ left: 200, top: 20, width: 30, height: 48 })
+  };
+  client.document.querySelectorAll = (selector) => (selector === ".mini-card" ? [miniCard] : []);
 
   client.applyRoomState(nextRoom);
 
   assert.equal(client.state.pendingRoom, nextRoom);
-  assert.equal(JSON.stringify(client.state.tableStateHold?.room), JSON.stringify(previousRoom));
+  assert.equal(client.tableDisplayRoom(), nextRoom);
+  assert.ok(client.state.liveActionAnimation);
+  assert.equal(client.state.liveActionAnimation.destElement, miniCard);
   assert.match(client.state.lastAnimatedResultKey, /TEST:2:B:discard:discard:played-card:1/);
 });
 
@@ -733,10 +844,10 @@ test("action card animation hides table handoff and deflects missed plays", () =
   assert.match(script, /requestAnimationFrame\(step\)/);
   assert.match(script, /fireworkElementForColor\(result\.card\.color\)/);
   assert.match(script, /discardElementForCard\(result\.card\.id\) \|\| discardEndTargetRect\(result\.card\)/);
-  assert.match(script, /function finishActionOverlay\(snapshot, overlay\)/);
+  assert.match(script, /function finishActionOverlay\(animation, overlay\)/);
   assert.match(script, /const DISCARD_CARD_WIDTH = 34;/);
   assert.match(script, /const DISCARD_CARD_HEIGHT = DISCARD_CARD_WIDTH \* 510 \/ 322;/);
-  assert.match(script, /overlay\.remove\(\);[\s\S]*releaseTableStateHold\(snapshot\.key\);[\s\S]*window\.requestAnimationFrame\(\(\) => \{[\s\S]*animateReplacementDraw\(snapshot\);[\s\S]*\}\);/);
+  assert.match(script, /overlay\.remove\(\);\s*animation\.ghost\?\.remove\(\);\s*unhideReplayActionDestination\(animation\.destElement\);[\s\S]*window\.requestAnimationFrame\(\(\) => \{[\s\S]*animateReplacementDraw\(animation\);[\s\S]*\}\);/);
   assert.match(script, /function queueBombAnimation\(previousRoom, nextRoom\)/);
   assert.match(script, /nextRoom\.bombs <= previousRoom\.bombs/);
   assert.match(script, /state\.pendingBombAnimationKey = bombAnimationKey\(nextRoom\);/);
@@ -828,7 +939,7 @@ test("manual rotation mode does not disable auto rotation or off-turn arrangemen
   assert.match(script, /element\.classList\.toggle\("layout-animating", canAnimateLayout \|\| isOwnLayoutAnimating\);/);
   assert.match(script, /function canArrangeOwnCards\(\) \{[\s\S]*return state\.room && state\.room\.status !== "ended";/);
   assert.match(script, /if \(!canArrangeOwnCards\(\)\) \{/);
-  assert.match(script, /const isOwnSelected = player\.seat === state\.mySeat && isLocallySelected && canArrangeOwnCards\(\);/);
+  assert.match(script, /const isOwnSelected = options\.replay[\s\S]*\? player\.seat === state\.mySeat && isReplayClued[\s\S]*: player\.seat === state\.mySeat && isLocallySelected && canArrangeOwnCards\(\);/);
   assert.match(script, /const canShow = manualRotationEnabled\(\) && canArrangeOwnCards\(\);/);
   assert.match(script, /const layout = targets\.length > 0[\s\S]*\? normalizeLayout\(state\.localLayouts\[targets\[0\]\.card\.id\] \|\| targets\[0\]\.card\.layout\)[\s\S]*: normalizeLayout\(\{ x: 50, y: 54, rotation: 0 \}\);/);
   assert.match(script, /if \(!manualRotationEnabled\(\) \|\| targets\.length === 0 \|\| !canArrangeOwnCards\(\)\) return;/);
@@ -879,7 +990,7 @@ test("manual rotation toggle off animates own cards back to auto rotation", () =
   assert.equal(autoCard.layout.rotation, client.autoRotationForX(autoCard.layout.x));
   assert.equal(autoElement.classList.contains("layout-animating"), false);
   assert.equal(client.scheduledActions.length, 1);
-  assert.equal(client.animationTimers.length, 1);
+  assert.equal(client.animationTimers.length, 3);
 });
 
 test("client displays official endgame state and blocks ended gameplay", () => {
@@ -893,6 +1004,334 @@ test("client displays official endgame state and blocks ended gameplay", () => {
   ]) {
     assert.match(script, pattern);
   }
+});
+
+test("ended game UI exposes compact replay controls", () => {
+  const html = read("public/index.html");
+  const script = read("public/app.js");
+
+  for (const pattern of [
+    /id="replayPanel"/,
+    /id="replayPreviousButton"/,
+    /id="replayNextButton"/,
+    /id="replayTimeline"/,
+    /id="replayCsvButton"/,
+    /id="opponentFlipButton"[\s\S]*>Flip<\/button>/,
+    /id="selfFlipButton"[\s\S]*>Flip<\/button>/
+  ]) {
+    assert.match(html, pattern);
+  }
+
+  assert.doesNotMatch(html, /id="replayToggleButton"/);
+  assert.doesNotMatch(html, /id="replayPerspectiveSelect"/);
+  assert.ok(html.indexOf('id="replayPreviousButton"') < html.indexOf('id="replayTimeline"'));
+  assert.ok(html.indexOf('id="replayTimeline"') < html.indexOf('id="replayNextButton"'));
+  assert.ok(html.indexOf('id="replayNextButton"') < html.indexOf('id="replayCsvButton"'));
+
+  assert.doesNotMatch(script, /replayPerspectiveSelect/);
+  assert.match(script, /selfFlipButton\.addEventListener\("click", \(\) => toggleReplayHandView\(state\.mySeat\)\);/);
+  assert.match(script, /opponentFlipButton\.addEventListener\("click", \(\) => toggleReplayHandView\(opponentSeat\(\)\)\);/);
+  assert.match(script, /function replayHandView\(seat\)/);
+  assert.match(script, /function toggleReplayHandView\(seat\)/);
+  assert.match(script, /replayCsvButton\.addEventListener\("click", \(\) => downloadReplayCsv\(\)\);/);
+  assert.match(script, /const requestedCode = state\.room\.code;/);
+  assert.match(script, /fetch\(`\/api\/replay\?code=\$\{encodeURIComponent\(requestedCode\)\}`\)/);
+  assert.match(script, /if \(state\.room\?\.code !== requestedCode\) return;/);
+  assert.match(script, /\/api\/replay\.csv\?code=\$\{encodeURIComponent\(state\.room\.code\)\}/);
+  assert.match(script, /function replayTimelineEvents\(\)/);
+  assert.match(script, /data\.layoutEvents/);
+  assert.match(script, /\[\.\.\.actions, \.\.\.layouts\]\.sort\(\(a, b\) => a\.seq - b\.seq\)/);
+  assert.match(script, /const events = replayTimelineEvents\(\);/);
+  assert.match(script, /selfControls\.classList\.toggle\("replay-active", isEnded\);/);
+  assert.match(script, /function ensureReplayOpenAtLatest\(\)/);
+  assert.match(script, /fetchReplay\(\{ openAtLatest: true \}\);/);
+  assert.match(script, /function openReplayAtLatest\(options = \{\}\)/);
+  assert.match(script, /state\.replay\.index = Math\.max\(0, events\.length - 1\);/);
+  assert.match(script, /state\.room\.status === "ended"/);
+  assert.match(html, /class="area-actions self-controls"[\s\S]*id="replayPanel"/);
+});
+
+test("replay card backs render rank and color possibility grids", () => {
+  const script = read("public/app.js");
+
+  assert.match(script, /function renderKnowledgeGrid\(card, knowledge\)/);
+  assert.match(script, /knowledge-color-strip/);
+  assert.match(script, /knowledge-rank-strip/);
+  assert.match(script, /renderKnowledgeGrid\(card, replayKnowledgeForCard\(card\.id, options\.knowledgeSeat\)\)/);
+});
+
+test("replay flip reuses the existing card flipper animation", () => {
+  const script = read("public/app.js");
+
+  assert.match(script, /syncReplayCardVisual\(element, card, visualMode, knowledgeGrid\);/);
+  assert.match(script, /function syncReplayCardVisual\(element, card, visualMode, knowledgeGrid = null\)/);
+  assert.match(script, /flipper\.className = "action-card-flipper replay-card-flipper";/);
+  assert.match(script, /back\.className = "action-card-side action-card-back-side replay-card-side";/);
+  assert.match(script, /face\.className = "action-card-side action-card-face-side replay-card-side";/);
+  assert.match(script, /element\.classList\.toggle\("is-revealed", visualMode === "face"\);/);
+});
+
+test("replay animates layouts and restores clue highlights", () => {
+  const script = read("public/app.js");
+
+  assert.match(script, /animateLayout: replayOpen/);
+  assert.match(script, /const canAnimateLayout = options\.animateLayout === true && \(options\.replay \|\| player\.seat !== state\.mySeat\);/);
+  assert.match(script, /function replayClueSelection\(\)/);
+  assert.match(script, /if \(event\?\.type !== "give-clue"\) return null;/);
+  assert.match(script, /function replayClueSelectionForSeat\(seat\)/);
+  assert.match(script, /const replaySelection = options\.replay \? replayClueSelectionForSeat\(player\.seat\) : null;/);
+  assert.match(script, /const isReplayClued = Boolean\(replaySelection\?\.cardIds\.includes\(card\.id\)\);/);
+  assert.match(script, /renderSingleClueLabel\(selfClueLabel, replaySelection\?\.seat === state\.mySeat \? replaySelection : null\);/);
+  assert.match(script, /renderSingleClueLabel\(opponentClueLabel, replaySelection\?\.seat === opponentSeat\(\) \? replaySelection : null\);/);
+});
+
+test("replay action animation is planned only for adjacent steps", () => {
+  const client = loadClientForUiStateTest();
+  const currentActionResult = {
+    action: "play",
+    type: "firework",
+    cardId: "a1",
+    card: { id: "a1", color: "red", rank: 1 }
+  };
+  const nextActionResult = {
+    action: "discard",
+    type: "discard",
+    cardId: "a2",
+    card: { id: "a2", color: "blue", rank: 2 }
+  };
+  client.state.replay.data = {
+    actionEvents: [
+      { seq: 0, type: "start", hands: {}, table: {}, knowledge: {} },
+      { seq: 1, type: "play", result: currentActionResult, hands: {}, table: {}, knowledge: {} },
+      { seq: 2, type: "discard", result: nextActionResult, hands: {}, table: {}, knowledge: {} },
+      { seq: 4, type: "give-clue", hands: {}, table: {}, knowledge: {} }
+    ],
+    layoutEvents: [
+      { seq: 3, type: "layout", hands: {}, table: {}, knowledge: {} }
+    ]
+  };
+
+  const forwardPlan = client.replayActionTransitionPlan(0, 1);
+  assert.equal(forwardPlan?.result, currentActionResult);
+  assert.equal(forwardPlan?.direction, "forward");
+  const reversePlan = client.replayActionTransitionPlan(1, 0);
+  assert.equal(reversePlan?.result, currentActionResult);
+  assert.equal(reversePlan?.direction, "reverse");
+  assert.equal(client.replayActionTransitionPlan(0, 2), null);
+
+  client.state.replay.settings.showLayoutCheckpoints = true;
+  const forwardToLayoutPlan = client.replayActionTransitionPlan(2, 3);
+  assert.equal(forwardToLayoutPlan, null);
+  const reverseFromLayoutPlan = client.replayActionTransitionPlan(3, 2);
+  assert.equal(reverseFromLayoutPlan, null);
+  assert.equal(client.replayActionTransitionPlan(3, 4), null);
+});
+
+test("same-target replay index updates keep an active action animation", () => {
+  const client = loadClientForUiStateTest();
+  client.state.room = { status: "ended" };
+  client.state.replay.data = {
+    actionEvents: [
+      { seq: 1, type: "play", hands: {}, table: {}, knowledge: {} },
+      { seq: 2, type: "give-clue", hands: {}, table: {}, knowledge: {} }
+    ],
+    layoutEvents: []
+  };
+  let overlayRemoved = false;
+  client.state.replay.index = 1;
+  client.state.replay.actionAnimation = {
+    key: "replay:test",
+    overlay: {
+      remove() {
+        overlayRemoved = true;
+      }
+    },
+    destElement: fakeElement(),
+    timers: []
+  };
+
+  client.setReplayIndex(1);
+
+  assert.equal(overlayRemoved, false);
+  assert.equal(client.state.replay.actionAnimation?.key, "replay:test");
+});
+
+test("reverse replay action commits state immediately and hides the returning card until it lands", () => {
+  const client = loadClientForUiStateTest();
+  const discardedCard = { id: "a1", color: "white", rank: 2, layout: { x: 75, y: 48, rotation: 5 } };
+  const targetElement = fakeElement();
+  targetElement.dataset.cardId = discardedCard.id;
+  targetElement.dataset.layoutRotation = String(discardedCard.layout.rotation);
+  client.document.querySelectorAll = (selector) => (selector === ".table-card" ? [targetElement] : []);
+  let appendedOverlay = null;
+  client.document.body.append = (element) => {
+    appendedOverlay = element;
+  };
+  client.state.room = {
+    code: "ROOM",
+    status: "ended",
+    maxHints: 8,
+    maxBombs: 3,
+    turnSeat: "A",
+    players: []
+  };
+  client.state.replay = {
+    ...client.state.replay,
+    isOpen: true,
+    index: 1,
+    data: {
+      code: "ROOM",
+      colors: [{ id: "white", label: "White" }],
+      settings: { maxHints: 8, maxBombs: 3 },
+      players: [{ seat: "A", name: "Player A" }, { seat: "B", name: "Player B" }],
+      actionEvents: [
+        {
+          seq: 0,
+          type: "start",
+          hands: { A: [discardedCard], B: [] },
+          table: { deckCount: 47, discard: [], fireworks: { white: 0 }, bombs: 0, hints: 7 },
+          knowledge: { A: { cards: { [discardedCard.id]: { colors: ["white"], ranks: [2] } } }, B: { cards: {} } }
+        },
+        {
+          seq: 1,
+          type: "discard",
+          result: {
+            action: "discard",
+            type: "discard",
+            actorSeat: "A",
+            cardId: discardedCard.id,
+            card: discardedCard
+          },
+          hands: { A: [], B: [] },
+          table: { deckCount: 46, discard: [discardedCard], fireworks: { white: 0 }, bombs: 0, hints: 7 },
+          knowledge: { A: { cards: {} }, B: { cards: {} } }
+        }
+      ],
+      layoutEvents: []
+    }
+  };
+  client.state.hasRenderedRoom = true;
+  client.state.seenCardIds = new Set();
+
+  client.setReplayIndex(0, { animateAction: true });
+
+  assert.equal(client.state.replay.index, 0);
+  assert.ok(client.state.replay.actionAnimation);
+  assert.ok(appendedOverlay?.layoutReadCount > 0);
+  assert.equal(targetElement.classList.contains("replay-action-source-hidden"), true);
+  assert.ok(
+    findDescendantByClassName(appendedOverlay, "knowledge-grid"),
+    "expected the flying-card overlay to include a knowledge grid built from the pre-move snapshot"
+  );
+
+  client.finishReplayActionFlight(client.state.replay.actionAnimation.key);
+
+  assert.equal(client.state.replay.actionAnimation, null);
+  assert.equal(targetElement.classList.contains("replay-action-source-hidden"), false);
+  assert.equal(client.selfHand.children.some((element) => element.classList.contains("new-card")), false);
+});
+
+test("reverse replay action overlay moves without changing layout properties", () => {
+  const client = loadClientForUiStateTest();
+  const overlay = fakeElement();
+  const startRect = { left: 12, top: 24, width: 40, height: 64, rotation: -8, scale: 0.5 };
+  const targetRect = { left: 80, top: 96, width: 40, height: 64, rotation: 12 };
+
+  client.placeReplayReverseActionOverlay(overlay, startRect);
+  const startLeft = overlay.style.left;
+  const startTop = overlay.style.top;
+
+  client.moveReplayReverseActionOverlay(overlay, startRect, targetRect, 220);
+
+  assert.equal(overlay.style.left, startLeft);
+  assert.equal(overlay.style.top, startTop);
+  assert.match(overlay.style.transform, /translate3d\(68px, 72px, 0\)/);
+  assert.match(overlay.style.transform, /rotate\(12deg\)/);
+  assert.match(overlay.style.transform, /scale\(1\)/);
+});
+
+test("replay board highlights the last completed action, not the upcoming one", () => {
+  const script = read("public/app.js");
+  const server = read("server.js");
+
+  assert.match(script, /lastResult: table\.lastResult \|\| null,/);
+  assert.doesNotMatch(script, /lastResult: event\?\.result \|\| null,/);
+  assert.match(server, /score: scoreRoom\(room\),\s*lastResult: room\.lastResult\s*\};/);
+});
+
+test("replay discard targeting uses the displayed replay snapshot", () => {
+  const client = loadClientForUiStateTest();
+  const discardedCard = { id: "r3", color: "red", rank: 3 };
+  client.state.room = {
+    code: "ROOM",
+    status: "ended",
+    fireworks: { red: 5 },
+    players: []
+  };
+  client.state.replay = {
+    ...client.state.replay,
+    isOpen: true,
+    index: 0,
+    data: {
+      code: "ROOM",
+      colors: [{ id: "red", label: "Red" }],
+      settings: { maxHints: 8, maxBombs: 3 },
+      actionEvents: [
+        {
+          seq: 1,
+          type: "discard",
+          result: { action: "discard", type: "discard", cardId: discardedCard.id, card: discardedCard },
+          hands: { A: [], B: [] },
+          table: { deckCount: 40, discard: [], fireworks: { red: 2 }, bombs: 0, hints: 7 },
+          knowledge: { A: { cards: {} }, B: { cards: {} } }
+        }
+      ],
+      layoutEvents: []
+    }
+  };
+
+  assert.equal(client.discardBucketForCard(discardedCard), client.neededDiscardPile);
+});
+
+test("replay timeline shows start plus moves, filtering layouts and end-game", () => {
+  const client = loadClientForUiStateTest();
+  client.state.replay.data = {
+    actionEvents: [
+      { seq: 1, type: "start", hands: {}, table: {}, knowledge: {} },
+      { seq: 2, type: "play", result: { action: "play" }, hands: {}, table: {}, knowledge: {} },
+      { seq: 4, type: "end-game", hands: {}, table: {}, knowledge: {} }
+    ],
+    layoutEvents: [
+      { seq: 3, type: "layout", seat: "A", hands: {}, table: {}, knowledge: {} }
+    ]
+  };
+
+  const r1 = client.replayTimelineEvents().map((e) => e.type);
+  const e1 = ["start", "play"];
+  assert.equal(r1.length, e1.length, `First timeline length should be 2, got ${r1.length}`);
+  for (let i = 0; i < r1.length; i++) {
+    assert.equal(r1[i], e1[i], `Element ${i} should be ${e1[i]}, got ${r1[i]}`);
+  }
+
+  client.setReplayLayoutCheckpointsVisible(true, { update: false });
+  const r2 = client.replayTimelineEvents().map((e) => e.type);
+  const e2 = ["start", "play", "layout"];
+  assert.equal(r2.length, e2.length, `Second timeline length should be 3, got ${r2.length}`);
+  for (let i = 0; i < r2.length; i++) {
+    assert.equal(r2[i], e2[i], `Element ${i} should be ${e2[i]}, got ${r2[i]}`);
+  }
+});
+
+test("local layout changes debounce into one seat-level checkpoint", () => {
+  const script = read("public/app.js");
+
+  assert.match(script, /function scheduleLayoutCheckpoint\(\)/);
+  assert.match(script, /type: "layout-checkpoint"/);
+  assert.doesNotMatch(script, /replayCheckpoint: true/);
+  assert.doesNotMatch(script, /replayCheckpointTimer/);
+  // every mutator path pokes the scheduler
+  const senders = script.match(/scheduleLayoutCheckpoint\(\);/g) || [];
+  assert.ok(senders.length >= 3, "drag, rotation and auto-rotation paths all schedule the checkpoint");
 });
 
 test("rainbow cards are included as a sixth suit", () => {

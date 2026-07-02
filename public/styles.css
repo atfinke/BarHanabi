@@ -555,6 +555,28 @@ h2 {
   transform: translate(-50%, 0) scale(1);
 }
 
+.hand-flip-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 45;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 10, 12, 0.74);
+  color: var(--text);
+  font-size: 0.68rem;
+  font-weight: 850;
+  line-height: 1;
+  text-transform: uppercase;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3);
+}
+
+.hand-flip-button.hidden {
+  display: none;
+}
+
 .clue-label::before {
   content: "";
   position: absolute;
@@ -617,6 +639,10 @@ h2 {
 .score-strip strong {
   font-size: 1.22rem;
   letter-spacing: 0;
+}
+
+.score-strip strong.stat-changed {
+  animation: stat-value-change 260ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 
 .score-strip strong.is-bomb-hit {
@@ -886,6 +912,10 @@ h2 {
   transition: transform 220ms linear;
 }
 
+.game[data-replay-action="active"] .table-card.layout-animating {
+  transition: transform 520ms cubic-bezier(0.22, 0.61, 0.44, 0.98);
+}
+
 .table-card.new-card {
   animation: card-enter 420ms ease-out both;
 }
@@ -895,9 +925,32 @@ h2 {
   pointer-events: none;
 }
 
+.table-card.replay-action-source-hidden,
+.mini-card.replay-action-source-hidden,
+.firework-card-slot.replay-action-source-hidden {
+  opacity: 0;
+}
+
 .table-card.card-exiting {
   animation: card-exit-up 260ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
   pointer-events: none;
+}
+
+.game[data-replay="open"] .table-card {
+  pointer-events: none;
+  -webkit-perspective: 900px;
+  perspective: 900px;
+}
+
+.game[data-replay="open"] .table-card.visible-card {
+  background: transparent;
+}
+
+.firework-ghost {
+  position: fixed;
+  z-index: 999;
+  pointer-events: none;
+  margin: 0;
 }
 
 .action-card-overlay,
@@ -923,12 +976,24 @@ h2 {
   opacity: 1;
 }
 
+.action-card-overlay.replay-action-overlay {
+  transition:
+    left 220ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    top 220ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 220ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.action-card-overlay.replay-action-overlay.replay-transform-overlay {
+  transition: transform 520ms cubic-bezier(0.22, 0.61, 0.44, 0.98);
+  will-change: transform;
+}
+
 .draw-card-overlay {
   opacity: 0;
   transition:
-    left 620ms cubic-bezier(0.22, 0.61, 0.36, 1),
-    top 620ms cubic-bezier(0.22, 0.61, 0.36, 1),
-    transform 620ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    left 520ms cubic-bezier(0.22, 0.61, 0.44, 0.98),
+    top 520ms cubic-bezier(0.22, 0.61, 0.44, 0.98),
+    transform 520ms cubic-bezier(0.22, 0.61, 0.44, 0.98),
     opacity 160ms ease;
 }
 
@@ -957,7 +1022,19 @@ h2 {
   transition: transform 340ms ease;
 }
 
+.replay-action-overlay .action-card-flipper {
+  transition-duration: 220ms;
+}
+
 .action-card-overlay.is-revealed .action-card-flipper {
+  transform: rotateY(180deg);
+}
+
+.table-card .action-card-flipper {
+  border-radius: inherit;
+}
+
+.table-card.is-revealed .action-card-flipper {
   transform: rotateY(180deg);
 }
 
@@ -968,6 +1045,10 @@ h2 {
   overflow: hidden;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
+}
+
+.table-card .action-card-side {
+  border-radius: inherit;
 }
 
 .action-card-back-side {
@@ -986,6 +1067,17 @@ h2 {
   to {
     opacity: 1;
     transform: var(--card-transform);
+  }
+}
+
+@keyframes stat-value-change {
+  from {
+    opacity: 0.42;
+    transform: translateY(-2px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -1102,7 +1194,6 @@ h2 {
   opacity: 0;
   pointer-events: none;
   transition: opacity 160ms ease;
-  transform: translateZ(0);
 }
 
 .card-face.asset-loaded .card-art,
@@ -1178,6 +1269,174 @@ h2 {
   opacity: 0;
   overflow: hidden;
   pointer-events: none;
+}
+
+.self-controls.replay-active {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.self-controls.replay-active > button,
+.self-controls.replay-active > .rotation-wheel {
+  display: none !important;
+}
+
+.self-controls.replay-active > .replay-panel {
+  flex: 1 1 100%;
+}
+
+.replay-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(4, 7, 8, 0.78);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.replay-panel.hidden {
+  display: none;
+}
+
+.replay-panel button {
+  min-height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+  padding: 0 10px;
+}
+
+#replayTimeline {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--own-selection-ring);
+}
+
+/* Safari ignores accent-color on range tracks; paint them explicitly. */
+#replayTimeline::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.34);
+}
+
+#replayTimeline::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: var(--own-selection-ring);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+#replayTimeline {
+  -webkit-appearance: none;
+  background: transparent;
+}
+
+.knowledge-grid {
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  top: 7%;
+  bottom: 7%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.knowledge-color-strip,
+.knowledge-rank-strip {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 2px;
+  padding: 2px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.44);
+}
+
+.knowledge-color-strip {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.knowledge-rank-strip {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.knowledge-dot {
+  min-width: 0;
+  height: 9px;
+  border-radius: 2px;
+  opacity: 0.18;
+  transition:
+    opacity 220ms linear,
+    border-color 220ms linear,
+    color 220ms linear;
+}
+
+.knowledge-dot[data-state="possible"] {
+  opacity: 1;
+}
+
+.knowledge-rank-dot {
+  display: grid;
+  place-items: center;
+  height: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 0.42rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.knowledge-rank-dot[data-state="possible"] {
+  border-color: rgba(255, 255, 255, 0.94);
+  background: transparent;
+  color: #ffffff;
+}
+
+.knowledge-color-dot.color-red {
+  background: var(--red-end);
+}
+
+.knowledge-color-dot.color-yellow {
+  background: var(--yellow-end);
+}
+
+.knowledge-color-dot.color-green {
+  background: var(--green-end);
+}
+
+.knowledge-color-dot.color-blue {
+  background: var(--blue-end);
+}
+
+.knowledge-color-dot.color-white {
+  background: var(--white-end);
+}
+
+.knowledge-color-dot.color-rainbow {
+  background: conic-gradient(
+    from 315deg,
+    var(--rainbow-blue),
+    var(--rainbow-purple) 18%,
+    var(--rainbow-red) 35%,
+    var(--rainbow-orange) 52%,
+    var(--rainbow-yellow) 68%,
+    var(--rainbow-green) 84%,
+    var(--rainbow-blue)
+  );
 }
 
 .rotation-wheel-track {
@@ -1481,13 +1740,6 @@ h2 {
   justify-content: center;
 }
 
-.deck-reveal-empty {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 750;
-}
-
 .settings-popover-header {
   display: flex;
   align-items: center;
@@ -1603,6 +1855,21 @@ h2 {
   .settings-button {
     width: 38px;
     min-height: 38px;
+  }
+
+  .replay-panel {
+    grid-template-columns: auto auto auto auto;
+    gap: 5px;
+  }
+
+  #replayTimeline {
+    grid-column: 1 / -1;
+    order: 2;
+  }
+
+  .replay-panel button {
+    min-height: 34px;
+    font-size: 0.58rem;
   }
 
   .table-card {

@@ -94,6 +94,7 @@
 
         <section class="player-area opponent-area">
           <div class="clue-label" id="opponentClueLabel" hidden></div>
+          <button class="hand-flip-button hidden" id="opponentFlipButton" type="button" aria-label="Flip opponent hand replay view">Flip</button>
           <div class="hand-surface opponent-hand" id="opponentHand" aria-label="Visible hand"></div>
         </section>
 
@@ -138,6 +139,7 @@
 
         <section class="player-area self-area">
           <div class="clue-label" id="selfClueLabel" hidden></div>
+          <button class="hand-flip-button hidden" id="selfFlipButton" type="button" aria-label="Flip own hand replay view">Flip</button>
           <div class="hand-surface self-hand" id="selfHand" aria-label="Hidden hand"></div>
         </section>
 
@@ -151,6 +153,13 @@
               <div class="rotation-wheel-knob"></div>
             </div>
           </div>
+
+          <section class="replay-panel hidden" id="replayPanel" aria-label="Replay controls">
+            <button type="button" id="replayPreviousButton" aria-label="Previous replay event">Prev</button>
+            <input id="replayTimeline" type="range" min="0" max="0" value="0" aria-label="Replay timeline">
+            <button type="button" id="replayNextButton" aria-label="Next replay event">Next</button>
+            <button type="button" id="replayCsvButton" aria-label="Download replay CSV">CSV</button>
+          </section>
         </div>
       </section>
 
@@ -197,6 +206,13 @@
                 <span class="settings-toggle-thumb"></span>
               </span>
             </label>
+            <label class="settings-toggle replay-setting hidden" id="replayLayoutStepsSetting" for="replayLayoutStepsToggle">
+              <span>Replay Layout Steps</span>
+              <input id="replayLayoutStepsToggle" type="checkbox" aria-label="Replay layout steps">
+              <span class="settings-toggle-track" aria-hidden="true">
+                <span class="settings-toggle-thumb"></span>
+              </span>
+            </label>
           </div>
         </div>
       </div>
@@ -204,6 +220,13 @@
       <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
     </main>
 
-    <script src="/app.js"></script>
+    <script>
+      (() => {
+        const appVersion = new URLSearchParams(window.location.search).get("v");
+        const appScript = document.createElement("script");
+        appScript.src = appVersion ? `/app.js?v=${encodeURIComponent(appVersion)}` : "/app.js";
+        document.body.append(appScript);
+      })();
+    </script>
   </body>
 </html>
