@@ -283,15 +283,29 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
     "colors",
     "max_score",
     "final_score",
-    "snapshot_phase"
+    "move_number"
   ]) {
     assert.ok(header.split(",").includes(column), `missing CSV column ${column}`);
   }
+  assert.ok(!header.split(",").includes("snapshot_phase"), "snapshot_phase removed");
   assert.doesNotMatch(replayCsv.text.split("\n")[0], /perspective/i);
 
   const rows = csvRows(replayCsv.text);
   const sequencedRows = rows.filter((row) => row.event_seq !== "").map((row) => Number(row.event_seq));
   assert.deepEqual([...sequencedRows].sort((a, b) => a - b), sequencedRows, "CSV rows must be chronological");
+
+  const eventRowsByType = Object.fromEntries(
+    rows.filter((row) => row.row_type === "event").map((row) => [row.event_type, row])
+  );
+  assert.equal(eventRowsByType.start.move_number, "0");
+  assert.equal(eventRowsByType["give-clue"].move_number, "1");
+  assert.equal(eventRowsByType.play.move_number, "2");
+  assert.equal(eventRowsByType["end-game"].move_number, "2");
+  assert.equal(
+    eventRowsByType.layout.move_number,
+    "0",
+    "layout checkpoint happens before the clue, so it carries the preceding move number"
+  );
 
   const gameRow = rows.find((row) => row.row_type === "game");
   assert.equal(gameRow.code, scenario.room.code);
@@ -308,7 +322,7 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
   assert.equal(clueCsvEvent.clue_value, String(scenario.clue.rank));
   assert.equal(clueCsvEvent.clue_label, rankLabel(scenario.clue.rank, scenario.clue.cardIds.length));
   assert.equal(clueCsvEvent.clued_card_ids, scenario.clue.cardIds.join("|"));
-  assert.equal(clueCsvEvent.snapshot_phase, "after_clue_before_turn_advance");
+  assert.equal(clueCsvEvent.move_number, "1");
 
   const playCsvEvent = eventRows.find((row) => row.event_type === "play");
   assert.equal(playCsvEvent.actor_seat, "B");
@@ -321,7 +335,7 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
 
   const endCsvEvent = eventRows.find((row) => row.event_type === "end-game");
   assert.equal(endCsvEvent.end_reason, "strikes");
-  assert.equal(endCsvEvent.snapshot_phase, "after_end");
+  assert.equal(endCsvEvent.move_number, "2");
 
   const handRows = rows.filter((row) => row.row_type === "hand_card");
   assert.ok(handRows.some((row) => row.hand_seat === "A" && row.hand_index !== ""), "expected indexed A hand rows");

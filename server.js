@@ -1145,7 +1145,7 @@ const REPLAY_CSV_COLUMNS = [
   "colors",
   "max_score",
   "final_score",
-  "snapshot_phase"
+  "move_number"
 ];
 
 function replayCsv(room) {
@@ -1157,15 +1157,31 @@ function replayCsv(room) {
     ...room.layoutEvents
   ].sort((first, second) => first.seq - second.seq);
 
+  const moveNumberBySeq = buildMoveNumberBySeq(events);
+
   for (const event of events) {
-    rows.push(csvRow(eventCsvFields(room, event)));
+    rows.push(csvRow(eventCsvFields(room, event, moveNumberBySeq)));
     if (event.type === "layout") {
-      rows.push(...layoutCheckpointCsvRows(room, event));
+      rows.push(...layoutCheckpointCsvRows(room, event, moveNumberBySeq));
     }
-    rows.push(...handCsvRows(room, event));
+    rows.push(...handCsvRows(room, event, moveNumberBySeq));
   }
 
   return `${rows.join("\n")}\n`;
+}
+
+function buildMoveNumberBySeq(events) {
+  const moveNumberBySeq = new Map();
+  let moveNumber = 0;
+  for (const event of events) {
+    if (event.type === "layout" || event.type === "end-game" || event.type === "start") {
+      moveNumberBySeq.set(event.seq, moveNumber);
+    } else {
+      moveNumber += 1;
+      moveNumberBySeq.set(event.seq, moveNumber);
+    }
+  }
+  return moveNumberBySeq;
 }
 
 function gameCsvFields(room) {
@@ -1178,7 +1194,7 @@ function gameCsvFields(room) {
   };
 }
 
-function eventCsvFields(room, event) {
+function eventCsvFields(room, event, moveNumberBySeq) {
   const card = event.card || null;
   const replacement = event.replacementCard || null;
   const result = event.result || {};
@@ -1204,16 +1220,16 @@ function eventCsvFields(room, event) {
     drew_replacement: event.drewReplacement,
     replacement_card_id: replacement?.id,
     end_reason: event.table?.endReason || event.reason,
-    snapshot_phase: snapshotPhase(event)
+    move_number: moveNumberBySeq.get(event.seq)
   };
 }
 
-function layoutCheckpointCsvRows(room, event) {
+function layoutCheckpointCsvRows(room, event, moveNumberBySeq) {
   const rows = [];
   const hand = event.hands?.[event.seat] || [];
   hand.forEach((card, index) => {
     rows.push(csvRow({
-      ...eventCsvFields(room, event),
+      ...eventCsvFields(room, event, moveNumberBySeq),
       row_type: "layout_checkpoint",
       hand_seat: event.seat,
       hand_index: index,
@@ -1228,7 +1244,7 @@ function layoutCheckpointCsvRows(room, event) {
   return rows;
 }
 
-function handCsvRows(room, event) {
+function handCsvRows(room, event, moveNumberBySeq) {
   const rows = [];
   for (const seat of ["A", "B"]) {
     const hand = event.hands?.[seat] || [];
@@ -1236,7 +1252,7 @@ function handCsvRows(room, event) {
     hand.forEach((card, index) => {
       const cardKnowledge = knowledge[card.id] || {};
       rows.push(csvRow({
-        ...eventCsvFields(room, event),
+        ...eventCsvFields(room, event, moveNumberBySeq),
         row_type: "hand_card",
         hand_seat: seat,
         hand_index: index,
@@ -1288,14 +1304,6 @@ function tableCsvFields(table = {}, room) {
 
 function serializeFireworks(fireworks = {}, colors) {
   return colors.map((color) => `${color.id}:${fireworks[color.id] || 0}`).join("|");
-}
-
-function snapshotPhase(event) {
-  if (event.type === "give-clue") return "after_clue_before_turn_advance";
-  if (event.type === "play" || event.type === "discard") return "before_action";
-  if (event.type === "layout") return "layout_checkpoint";
-  if (event.type === "end-game") return "after_end";
-  return "snapshot";
 }
 
 function snapshotCard(event, seat, cardId) {
