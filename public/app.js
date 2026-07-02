@@ -87,6 +87,7 @@ const state = {
   deckRevealHideTimer: null,
   deckRevealRenderKey: null,
   rotationWheelAnimationTimer: null,
+  layoutCheckpointTimer: null,
   replay: {
     data: null,
     isOpen: false,
@@ -578,6 +579,8 @@ function leaveRoom(message) {
     state.events.close();
     state.events = null;
   }
+  window.clearTimeout(state.layoutCheckpointTimer);
+  state.layoutCheckpointTimer = null;
   state.currentCode = null;
   state.room = null;
   state.deckRevealRenderKey = null;
@@ -757,6 +760,15 @@ function scheduleAction(payload, options = {}) {
   setTimeout(() => {
     action(payload, options);
   }, 0);
+}
+
+function scheduleLayoutCheckpoint() {
+  window.clearTimeout(state.layoutCheckpointTimer);
+  state.layoutCheckpointTimer = window.setTimeout(() => {
+    state.layoutCheckpointTimer = null;
+    if (!state.room) return;
+    scheduleAction({ type: "layout-checkpoint", seat: state.mySeat }, { silent: true });
+  }, CARD_LAYOUT_REPLAY_SYNC_MS);
 }
 
 function render() {
@@ -1899,8 +1911,7 @@ function bindCardPointer(element, surface, player, card, options) {
       layout,
       latestLayout: layout,
       moved: false,
-      lastSyncAt: 0,
-      replayCheckpointTimer: null
+      lastSyncAt: 0
     };
   }
 
@@ -1923,27 +1934,6 @@ function bindCardPointer(element, surface, player, card, options) {
       seat: player.seat,
       cardId: card.id,
       ...gesture.latestLayout
-    });
-  }
-
-  function scheduleReplayLayoutCheckpoint() {
-    if (!gesture) return;
-    window.clearTimeout(gesture.replayCheckpointTimer);
-    gesture.replayCheckpointTimer = window.setTimeout(() => {
-      sendReplayLayoutCheckpoint();
-    }, CARD_LAYOUT_REPLAY_SYNC_MS);
-  }
-
-  function sendReplayLayoutCheckpoint() {
-    if (!gesture) return;
-    window.clearTimeout(gesture.replayCheckpointTimer);
-    gesture.replayCheckpointTimer = null;
-    scheduleAction({
-      type: "move-card",
-      seat: player.seat,
-      cardId: card.id,
-      ...gesture.latestLayout,
-      replayCheckpoint: true
     });
   }
 
@@ -1990,7 +1980,7 @@ function bindCardPointer(element, surface, player, card, options) {
     gesture.moved = true;
     applyCardLayoutUpdate(surface, card, gesture.latestLayout, gesture.surfaceSize);
     sendMove(false);
-    scheduleReplayLayoutCheckpoint();
+    scheduleLayoutCheckpoint();
   }
 
   function finishGesture(shouldCommit) {
@@ -2001,7 +1991,6 @@ function bindCardPointer(element, surface, player, card, options) {
     element.removeEventListener("pointermove", onPointerMove);
     element.removeEventListener("pointerup", onPointerUp);
     element.removeEventListener("pointercancel", onPointerCancel);
-    window.clearTimeout(gesture.replayCheckpointTimer);
     state.activeDrag = null;
 
     if (!shouldCommit) {
@@ -2010,7 +1999,7 @@ function bindCardPointer(element, surface, player, card, options) {
       applyLayout(element, startLayout, surfaceSize);
     } else if (moved) {
       sendMove(true);
-      sendReplayLayoutCheckpoint();
+      scheduleLayoutCheckpoint();
     }
 
     gesture = null;
@@ -2120,6 +2109,7 @@ function animateOwnCardsToAutoRotation() {
       cardId: card.id,
       ...next
     }, { silent: true });
+    scheduleLayoutCheckpoint();
   });
 }
 
@@ -2182,6 +2172,7 @@ function handleRotationWheelPointerDown(event) {
         ...layout
       });
     });
+    scheduleLayoutCheckpoint();
   }
 
   function applyRotation(pointer) {

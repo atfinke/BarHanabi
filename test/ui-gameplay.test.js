@@ -981,7 +981,7 @@ test("manual rotation toggle off animates own cards back to auto rotation", () =
   assert.equal(autoCard.layout.rotation, client.autoRotationForX(autoCard.layout.x));
   assert.equal(autoElement.classList.contains("layout-animating"), false);
   assert.equal(client.scheduledActions.length, 1);
-  assert.equal(client.animationTimers.length, 2);
+  assert.equal(client.animationTimers.length, 3);
 });
 
 test("client displays official endgame state and blocks ended gameplay", () => {
@@ -1309,6 +1309,18 @@ test("replay timeline shows start plus moves, filtering layouts and end-game", (
   for (let i = 0; i < r2.length; i++) {
     assert.equal(r2[i], e2[i], `Element ${i} should be ${e2[i]}, got ${r2[i]}`);
   }
+});
+
+test("local layout changes debounce into one seat-level checkpoint", () => {
+  const script = read("public/app.js");
+
+  assert.match(script, /function scheduleLayoutCheckpoint\(\)/);
+  assert.match(script, /type: "layout-checkpoint"/);
+  assert.doesNotMatch(script, /replayCheckpoint: true/);
+  assert.doesNotMatch(script, /replayCheckpointTimer/);
+  // every mutator path pokes the scheduler
+  const senders = script.match(/scheduleLayoutCheckpoint\(\);/g) || [];
+  assert.ok(senders.length >= 3, "drag, rotation and auto-rotation paths all schedule the checkpoint");
 });
 
 test("rainbow cards are included as a sixth suit", () => {
