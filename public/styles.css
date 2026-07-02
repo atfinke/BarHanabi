@@ -1288,6 +1288,7 @@ h2 {
   color: var(--text);
   font-size: 0.72rem;
   font-weight: 850;
+  text-transform: uppercase;
   padding: 0 10px;
 }
 
@@ -1295,6 +1296,28 @@ h2 {
   width: 100%;
   min-width: 0;
   accent-color: var(--own-selection-ring);
+}
+
+/* Safari ignores accent-color on range tracks; paint them explicitly. */
+#replayTimeline::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.34);
+}
+
+#replayTimeline::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: var(--own-selection-ring);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+#replayTimeline {
+  -webkit-appearance: none;
+  background: transparent;
 }
 
 .knowledge-grid {
