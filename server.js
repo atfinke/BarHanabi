@@ -1091,9 +1091,149 @@ function replayState(room) {
       name: player.name,
       hand: player.hand.map(replayCard)
     })),
+    highlights: replayHighlights(room),
     actionEvents: room.actionEvents,
     layoutEvents: room.layoutEvents
   };
+}
+
+function replayHighlights(room) {
+  const events = [
+    ...room.actionEvents,
+    ...room.layoutEvents
+  ].sort((first, second) => first.seq - second.seq);
+  const moveNumberBySeq = buildMoveNumberBySeq(events);
+  const highlights = [];
+  let previousActionEvent = null;
+  const layoutByCardId = new Map();
+
+  for (const event of events) {
+    if (event.type === "layout") {
+      highlights.push(...layoutHighlights(room, event, moveNumberBySeq, layoutByCardId));
+      rememberEventLayouts(layoutByCardId, event);
+      continue;
+    }
+
+    highlights.push(...actionHighlights(room, event, previousActionEvent, moveNumberBySeq));
+    rememberEventLayouts(layoutByCardId, event);
+    previousActionEvent = event;
+  }
+
+  return highlights;
+}
+
+function actionHighlights(room, event, previousEvent, moveNumberBySeq) {
+  if (event.type === "start") return [];
+  if (event.type === "give-clue") {
+    return [highlightBase(room, event, "clue", moveNumberBySeq, {
+      title: `${event.actorSeat} clued ${event.clue?.label || "cards"} to ${event.targetSeat}`,
+      summary: `${event.actorSeat} gave ${event.targetSeat} ${event.clue?.label || "a clue"}.`,
+      actorSeat: event.actorSeat,
+      targetSeat: event.targetSeat,
+      cardIds: event.cardIds || [],
+      clue: event.clue || null
+    })];
+  }
+  if (event.type === "discard") {
+    const before = previousEvent?.table || {};
+    const restoredHint = Number(event.table?.hints) > Number(before.hints);
+    return [highlightBase(room, event, event.card?.rank === 5 ? "critical-discard" : "discard", moveNumberBySeq, {
+      title: `${event.actorSeat} discarded ${cardName(event.card)}`,
+      summary: `${event.actorSeat} discarded ${cardName(event.card)}${restoredHint ? " and restored a hint" : ""}.`,
+      actorSeat: event.actorSeat,
+      card: event.card,
+      result: event.result || null,
+      hintsBefore: before.hints,
+      hintsAfter: event.table?.hints
+    })];
+  }
+  if (event.type === "play") {
+    const before = previousEvent?.table || {};
+    const scoreBefore = Number(before.score) || 0;
+    const scoreAfter = Number(event.table?.score) || 0;
+    const base = {
+      actorSeat: event.actorSeat,
+      card: event.card,
+      result: event.result || null,
+      scoreBefore,
+      scoreAfter,
+      scoreDelta: scoreAfter - scoreBefore,
+      scorePercentAfter: scorePercent(scoreAfter, room),
+      bombsBefore: before.bombs,
+      bombsAfter: event.table?.bombs
+    };
+
+    if (event.playable) {
+      return [highlightBase(room, event, event.card?.rank === 5 ? "firework-complete" : "successful-play", moveNumberBySeq, {
+        ...base,
+        title: `${event.actorSeat} played ${cardName(event.card)}`,
+        summary: `${event.actorSeat} played ${cardName(event.card)} for ${scoreAfter}/${room.colors.length * 5}.`
+      })];
+    }
+
+    return [highlightBase(room, event, "missed-play", moveNumberBySeq, {
+      ...base,
+      title: `${event.actorSeat} missed with ${cardName(event.card)}`,
+      summary: `${event.actorSeat} missed with ${cardName(event.card)}${event.table?.status === "ended" ? " and ended the game" : ""}.`,
+      endReason: event.table?.endReason || null
+    })];
+  }
+  if (event.type === "end-game") {
+    const score = Number(event.table?.score) || scoreRoom(room);
+    return [highlightBase(room, event, "game-end", moveNumberBySeq, {
+      title: "Game ended",
+      summary: `Game ended with ${score}/${room.colors.length * 5}.`,
+      scoreAfter: score,
+      scorePercentAfter: scorePercent(score, room),
+      endReason: event.reason || event.table?.endReason || room.endReason
+    })];
+  }
+  return [];
+}
+
+function layoutHighlights(room, event, moveNumberBySeq, layoutByCardId) {
+  const hand = event.hands?.[event.seat] || [];
+  return hand
+    .filter((card) => card.color === "rainbow" && layoutChanged(layoutByCardId.get(card.id), card.layout))
+    .map((card) => highlightBase(room, event, "wild-card-move", moveNumberBySeq, {
+      title: `${event.seat} moved ${cardName(card)}`,
+      summary: `${event.seat} moved ${cardName(card)} during hand arrangement.`,
+      actorSeat: event.seat,
+      card,
+      layout: card.layout
+    }));
+}
+
+function highlightBase(room, event, type, moveNumberBySeq, fields = {}) {
+  return {
+    id: `${room.code}:${event.seq}:${type}:${fields.card?.id || fields.targetSeat || event.type}`,
+    seq: event.seq,
+    at: event.at,
+    moveNumber: moveNumberBySeq.get(event.seq),
+    type,
+    deckCount: event.table?.deckCount,
+    ...fields
+  };
+}
+
+function rememberEventLayouts(layoutByCardId, event) {
+  for (const hand of Object.values(event.hands || {})) {
+    for (const card of hand) {
+      layoutByCardId.set(card.id, card.layout);
+    }
+  }
+}
+
+function layoutChanged(previousLayout, nextLayout) {
+  if (!previousLayout || !nextLayout) return false;
+  return previousLayout.x !== nextLayout.x ||
+    previousLayout.y !== nextLayout.y ||
+    previousLayout.rotation !== nextLayout.rotation;
+}
+
+function scorePercent(score, room) {
+  const maxScore = room.colors.length * 5;
+  return maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
 }
 
 const REPLAY_CSV_COLUMNS = [
