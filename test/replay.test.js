@@ -212,6 +212,10 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
     "play",
     "end-game"
   ]);
+  const [clueSnapshotEvent, playSnapshotEvent, endSnapshotEvent] = replay.body.actionEvents;
+  assert.equal(clueSnapshotEvent.table.lastResult, null, "clue snapshot must not carry a last result");
+  assert.equal(playSnapshotEvent.table.lastResult, null, "pre-play snapshot must not leak the upcoming play");
+  assert.equal(endSnapshotEvent.table.lastResult?.cardId, scenario.bUnplayable.id, "end snapshot keeps the final play as last result");
   assert.equal(replay.body.layoutEvents.length, 1);
   assert.deepEqual(replay.body.layoutEvents[0].layout, { x: 42, y: 46, rotation: 7 });
   assert.equal(replay.body.layoutEvents[0].cardId, aHiddenCard.id);

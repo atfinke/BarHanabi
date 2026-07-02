@@ -235,7 +235,8 @@ function replayTableSnapshot(room) {
     status: room.status,
     endReason: room.endReason,
     finalTurnsRemaining: room.finalTurnsRemaining,
-    score: scoreRoom(room)
+    score: scoreRoom(room),
+    lastResult: room.lastResult
   };
 }
 
