@@ -132,6 +132,7 @@ function makeRoom(code = createRoomCode(), rawSettings = {}, options = {}) {
     }
   }
 
+  appendActionEvent(room, "start", {});
   addLog(room, "New game started.");
   return room;
 }
@@ -248,9 +249,10 @@ function replaySnapshot(room) {
   };
 }
 
-function appendActionEvent(room, type, payload = {}, snapshot = replaySnapshot(room)) {
+function appendActionEvent(room, type, payload = {}, seq = nextReplaySeq(room)) {
+  const snapshot = replaySnapshot(room);
   room.actionEvents.push({
-    seq: nextReplaySeq(room),
+    seq,
     at: Date.now(),
     type,
     ...payload,
@@ -258,6 +260,7 @@ function appendActionEvent(room, type, payload = {}, snapshot = replaySnapshot(r
     table: snapshot.table,
     knowledge: snapshot.knowledge
   });
+  room.actionEvents.sort((a, b) => a.seq - b.seq);
 }
 
 function appendLayoutEvent(room, player, card, snapshot = replaySnapshot(room)) {
@@ -871,7 +874,6 @@ function handleAction(room, action) {
   if (type === "discard") {
     assertGameInProgress(room);
     assertPlayerTurn(room, player);
-    const replay = replaySnapshot(room);
     const card = takeCard(player, action);
     room.discard.push(card);
     room.lastResult = actionResult("discard", "discard", player, card);
@@ -885,6 +887,8 @@ function handleAction(room, action) {
       room,
       `${player.name} discarded ${cardName(card)}.${replacement ? " Drew a replacement." : ""}`
     );
+    const seq = nextReplaySeq(room);
+    finishTurn(room, player, { drewLastCard });
     appendActionEvent(room, "discard", {
       actorSeat: player.seat,
       cardId: card.id,
@@ -892,8 +896,7 @@ function handleAction(room, action) {
       result: room.lastResult,
       drewReplacement: Boolean(replacement),
       replacementCard: replacement ? replayCard(replacement) : null
-    }, replay);
-    finishTurn(room, player, { drewLastCard });
+    }, seq);
     touch(room);
     return room;
   }
@@ -901,7 +904,6 @@ function handleAction(room, action) {
   if (type === "play") {
     assertGameInProgress(room);
     assertPlayerTurn(room, player);
-    const replay = replaySnapshot(room);
     const card = takeCard(player, action);
     const nextRank = room.fireworks[card.color] + 1;
     let message = "";
@@ -926,6 +928,9 @@ function handleAction(room, action) {
     clearCommittedClueForActingPlayer(room, player);
 
     if (allFireworksComplete(room)) {
+      const seq = nextReplaySeq(room);
+      addLog(room, message);
+      endGame(room, "perfect");
       appendActionEvent(room, "play", {
         actorSeat: player.seat,
         cardId: card.id,
@@ -934,14 +939,15 @@ function handleAction(room, action) {
         playable: true,
         drewReplacement: false,
         replacementCard: null
-      }, replay);
-      addLog(room, message);
-      endGame(room, "perfect");
+      }, seq);
       touch(room);
       return room;
     }
 
     if (exceededBombAllowance) {
+      const seq = nextReplaySeq(room);
+      addLog(room, message);
+      endGame(room, "strikes");
       appendActionEvent(room, "play", {
         actorSeat: player.seat,
         cardId: card.id,
@@ -950,15 +956,16 @@ function handleAction(room, action) {
         playable: false,
         drewReplacement: false,
         replacementCard: null
-      }, replay);
-      addLog(room, message);
-      endGame(room, "strikes");
+      }, seq);
       touch(room);
       return room;
     }
 
     const replacement = drawToHand(room, player, incomingCardLayout(player));
     const drewLastCard = Boolean(replacement) && room.deck.length === 0;
+    const seq = nextReplaySeq(room);
+    addLog(room, `${message}${replacement ? " Drew a replacement." : ""}`);
+    finishTurn(room, player, { drewLastCard });
     appendActionEvent(room, "play", {
       actorSeat: player.seat,
       cardId: card.id,
@@ -967,9 +974,7 @@ function handleAction(room, action) {
       playable: card.rank === nextRank,
       drewReplacement: Boolean(replacement),
       replacementCard: replacement ? replayCard(replacement) : null
-    }, replay);
-    addLog(room, `${message}${replacement ? " Drew a replacement." : ""}`);
-    finishTurn(room, player, { drewLastCard });
+    }, seq);
     touch(room);
     return room;
   }

@@ -208,14 +208,19 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
   assert.equal(replay.body.status, "ended");
   assert.equal(replay.body.endReason, "strikes");
   assert.deepEqual(replay.body.actionEvents.map((event) => event.type), [
+    "start",
     "give-clue",
     "play",
     "end-game"
   ]);
-  const [clueSnapshotEvent, playSnapshotEvent, endSnapshotEvent] = replay.body.actionEvents;
-  assert.equal(clueSnapshotEvent.table.lastResult, null, "clue snapshot must not carry a last result");
-  assert.equal(playSnapshotEvent.table.lastResult, null, "pre-play snapshot must not leak the upcoming play");
-  assert.equal(endSnapshotEvent.table.lastResult?.cardId, scenario.bUnplayable.id, "end snapshot keeps the final play as last result");
+  const [startEvent, clueSnapshotEvent, playSnapshotEvent, endSnapshotEvent] = replay.body.actionEvents;
+  assert.equal(startEvent.table.deckCount, 50, "start snapshot is the post-deal board");
+  assert.equal(startEvent.table.lastResult, null);
+  assert.equal(clueSnapshotEvent.table.lastResult, null, "clue snapshot carries no play result");
+  assert.equal(clueSnapshotEvent.table.hints, 7, "clue snapshot is post-clue");
+  assert.equal(playSnapshotEvent.table.lastResult?.cardId, scenario.bUnplayable.id, "play snapshot carries its own result");
+  assert.equal(playSnapshotEvent.table.status, "ended", "ending play snapshot is post-endGame");
+  assert.equal(endSnapshotEvent.table.lastResult?.cardId, scenario.bUnplayable.id);
   assert.equal(replay.body.layoutEvents.length, 1);
   assert.deepEqual(replay.body.layoutEvents[0].layout, { x: 42, y: 46, rotation: 7 });
   assert.equal(replay.body.layoutEvents[0].cardId, aHiddenCard.id);
@@ -322,7 +327,7 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
     row.rotation === "7"
   ));
 
-  const clueEvent = replay.body.actionEvents[0];
+  const clueEvent = clueSnapshotEvent;
   assert.equal(clueEvent.actorSeat, "A");
   assert.equal(clueEvent.targetSeat, "B");
   assert.deepEqual(clueEvent.cardIds, scenario.clue.cardIds);
