@@ -105,6 +105,9 @@ function fakeElement() {
     querySelector() {
       return null;
     },
+    contains() {
+      return false;
+    },
     getBoundingClientRect() {
       element.layoutReadCount = (element.layoutReadCount || 0) + 1;
       return { left: 0, top: 0, width: 100, height: 100 };
@@ -196,7 +199,7 @@ function loadClientForUiStateTest(options = {}) {
   };
 
   vm.runInNewContext(
-    `${read("public/app.js")}\nglobalThis.__client = { state, document, applyRoomState, tableDisplayRoom, updateActionButtons, updateRoomCodeLabel, roomCodeLabel, selfPlayButton, selfDiscardButton, selfHand, opponentHand, hintSetting, bombSetting, rainbowSetting, autoClueToggle, manualRotationToggle, replayLayoutStepsToggle, readSetupSettings, handleManualRotationToggle, renderHand, autoRotationForX, replayTimelineEvents, replayActionTransitionPlan, setReplayIndex, finishReplayActionAnimation, placeReplayReverseActionOverlay, moveReplayReverseActionOverlay, setReplayLayoutCheckpointsVisible, discardBucketForCard, neededDiscardPile, spentDiscardPile, scheduledActions, animationTimers };`,
+    `${read("public/app.js")}\nglobalThis.__client = { state, document, applyRoomState, tableDisplayRoom, updateActionButtons, updateRoomCodeLabel, roomCodeLabel, selfPlayButton, selfDiscardButton, selfHand, opponentHand, hintSetting, bombSetting, rainbowSetting, autoClueToggle, manualRotationToggle, replayLayoutStepsToggle, readSetupSettings, handleManualRotationToggle, renderHand, autoRotationForX, replayTimelineEvents, replayActionTransitionPlan, setReplayIndex, finishReplayActionFlight, placeReplayReverseActionOverlay, moveReplayReverseActionOverlay, setReplayLayoutCheckpointsVisible, discardBucketForCard, neededDiscardPile, spentDiscardPile, scheduledActions, animationTimers };`,
     sandbox
   );
   return { ...sandbox.__client, storage };
@@ -1094,23 +1097,23 @@ test("same-target replay index updates keep an active action animation", () => {
   let overlayRemoved = false;
   client.state.replay.index = 1;
   client.state.replay.actionAnimation = {
-    targetIndex: 1,
+    key: "replay:test",
     overlay: {
       remove() {
         overlayRemoved = true;
       }
     },
-    sourceElement: fakeElement(),
+    destElement: fakeElement(),
     timers: []
   };
 
   client.setReplayIndex(1);
 
   assert.equal(overlayRemoved, false);
-  assert.equal(client.state.replay.actionAnimation?.targetIndex, 1);
+  assert.equal(client.state.replay.actionAnimation?.key, "replay:test");
 });
 
-test("reverse replay action animation keeps current snapshot visible until it finishes", () => {
+test("reverse replay action commits state immediately and hides the returning card until it lands", () => {
   const client = loadClientForUiStateTest();
   const discardedCard = { id: "a1", color: "white", rank: 2, layout: { x: 75, y: 48, rotation: 5 } };
   const targetElement = fakeElement();
@@ -1169,14 +1172,15 @@ test("reverse replay action animation keeps current snapshot visible until it fi
 
   client.setReplayIndex(0, { animateAction: true });
 
-  assert.equal(client.state.replay.index, 1);
-  assert.equal(client.state.replay.actionAnimation?.targetIndex, 0);
-  assert.ok(appendedOverlay?.layoutReadCount > 0);
-
-  client.finishReplayActionAnimation(client.state.replay.actionAnimation.key);
-
   assert.equal(client.state.replay.index, 0);
+  assert.ok(client.state.replay.actionAnimation);
+  assert.ok(appendedOverlay?.layoutReadCount > 0);
+  assert.equal(targetElement.classList.contains("replay-action-source-hidden"), true);
+
+  client.finishReplayActionFlight(client.state.replay.actionAnimation.key);
+
   assert.equal(client.state.replay.actionAnimation, null);
+  assert.equal(targetElement.classList.contains("replay-action-source-hidden"), false);
   assert.equal(client.selfHand.children.some((element) => element.classList.contains("new-card")), false);
 });
 
@@ -1197,6 +1201,60 @@ test("reverse replay action overlay moves without changing layout properties", (
   assert.match(overlay.style.transform, /translate3d\(68px, 72px, 0\)/);
   assert.match(overlay.style.transform, /rotate\(12deg\)/);
   assert.match(overlay.style.transform, /scale\(1\)/);
+});
+
+test("replay auto-open defers to the live end-of-game animation", () => {
+  const script = read("public/app.js");
+
+  assert.match(script, /function liveActionAnimationActive\(\) \{\s*return Boolean\(state\.tableStateHold \|\| state\.pendingDrawAnimation\);/);
+  assert.match(script, /if \(liveActionAnimationActive\(\)\) return;\s*openReplayAtLatest\(\{ update: false \}\);/);
+  assert.match(script, /state\.tableStateHold = null;\s*if \(state\.room\) \{\s*ensureReplayOpenAtLatest\(\);/);
+  assert.match(script, /state\.pendingDrawAnimation = null;\s*if \(options\.update !== false && state\.room\) \{\s*ensureReplayOpenAtLatest\(\);/);
+});
+
+test("replay steps commit state first and fly overlays to measured destinations", () => {
+  const script = read("public/app.js");
+
+  const forward = script.match(/function animateReplayActionForwardTransition\(plan\) \{[\s\S]*?\n\}/)?.[0] || "";
+  assert.ok(forward, "Missing animateReplayActionForwardTransition");
+  assert.match(forward, /state\.replay\.index = plan\.targetIndex;\s*render\(\);[\s\S]*const path = actionResultPath\(plan\.result\);/);
+  assert.match(forward, /destElement\.classList\.add\("replay-action-source-hidden"\);/);
+
+  const reverse = script.match(/function animateReplayActionReverseTransition\(plan\) \{[\s\S]*?\n\}/)?.[0] || "";
+  assert.ok(reverse, "Missing animateReplayActionReverseTransition");
+  assert.match(reverse, /state\.replay\.index = plan\.targetIndex;[\s\S]*render\(\);[\s\S]*const destElement = cardElementForCardId\(plan\.result\.cardId\);/);
+
+  const finish = script.match(/function finishReplayActionFlight\(key\) \{[\s\S]*?\n\}/)?.[0] || "";
+  assert.ok(finish, "Missing finishReplayActionFlight");
+  assert.match(finish, /animation\.overlay\?\.remove\(\);\s*animation\.ghost\?\.remove\(\);\s*unhideReplayActionDestination\(animation\.destElement\);/);
+  assert.doesNotMatch(finish, /render\(\)/);
+
+  assert.match(script, /function createFireworkGhost\(result\)/);
+  assert.doesNotMatch(script, /replayReverseTargetRect|replayActionVisualEvent|is-settling|settlingAction/);
+  assert.doesNotMatch(read("public/styles.css"), /is-settling/);
+});
+
+test("replay board highlights the last completed action, not the upcoming one", () => {
+  const script = read("public/app.js");
+  const server = read("server.js");
+
+  assert.match(script, /lastResult: table\.lastResult \|\| null,/);
+  assert.doesNotMatch(script, /lastResult: event\?\.result \|\| null,/);
+  assert.match(server, /score: scoreRoom\(room\),\s*lastResult: room\.lastResult\s*\};/);
+});
+
+test("replay forward steps animate the replacement draw", () => {
+  const script = read("public/app.js");
+
+  assert.match(script, /const replacement = plan\.event\.replacementCard \|\| null;/);
+  assert.match(script, /state\.pendingDrawAnimation = \{\s*key: snapshot\.key,\s*seat: plan\.result\.actorSeat,\s*cardId: replacement\.id\s*\};/);
+  assert.match(script, /animateReplayReplacementDraw\(animation\.key, animation\.drawSeat, animation\.drawCard\);/);
+  assert.match(script, /function animateReplayReplacementDraw\(key, seat, card\)/);
+  assert.match(script, /function animateDrawIntoHand\(key, replacement\)/);
+  assert.match(script, /animateDrawIntoHand\(snapshot\.key, replacement\);/);
+  assert.match(script, /const concealed = !cardHasDetails\(card\) \|\| replayHandView\(seat\) === "knowledge";/);
+  assert.match(script, /knowledgeGrid: concealed \? renderKnowledgeGrid\(card, replayKnowledgeForCard\(card\.id, seat\)\) : null/);
+  assert.match(script, /if \(concealed && replacement\.knowledgeGrid\) \{\s*visual\.append\(replacement\.knowledgeGrid\);/);
 });
 
 test("replay discard targeting uses the displayed replay snapshot", () => {

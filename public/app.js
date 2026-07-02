@@ -7,11 +7,11 @@ const CLUE_LABEL_EXIT_MS = 180;
 const CLUE_CHOOSER_EXIT_MS = 180;
 const ACTION_MOVE_MS = 900;
 const ACTION_SETTLE_MS = 90;
-const REPLAY_ACTION_MOVE_MS = 620;
+const REPLAY_ACTION_MOVE_MS = 520;
 const REPLAY_ACTION_REVEAL_MS = 120;
 const REPLAY_ACTION_FLIP_MS = 220;
-const REPLAY_ACTION_SETTLE_MS = 45;
-const REPLAY_ACTION_COMMIT_FADE_MS = 160;
+const REPLAY_ACTION_SETTLE_MS = 0;
+const DRAW_CARD_MOVE_MS = 520;
 const CARD_LAYOUT_SYNC_MS = 140;
 const CARD_LAYOUT_ANIMATION_MS = 220;
 const CARD_LAYOUT_REPLAY_SYNC_MS = 500;
@@ -96,7 +96,6 @@ const state = {
     loading: false,
     autoOpenedCode: null,
     actionAnimation: null,
-    settlingAction: null,
     suppressedEnterCardIds: []
   }
 };
@@ -582,6 +581,8 @@ function leaveRoom(message) {
   state.currentCode = null;
   state.room = null;
   state.deckRevealRenderKey = null;
+  state.tableStateHold = null;
+  state.pendingDrawAnimation = null;
   state.seenCardIds.clear();
   resetReplayState({ update: false });
   resetLocalSelections();
@@ -937,24 +938,9 @@ function currentReplayEvent() {
   return events[clamp(state.replay.index, 0, events.length - 1)] || events[0];
 }
 
-function currentReplayRenderEvent() {
-  return state.replay.actionAnimation?.visualEvent || currentReplayEvent();
-}
-
-function replayControlIndex(events = replayTimelineEvents()) {
-  if (events.length === 0) return 0;
-  return clamp(state.replay.actionAnimation?.targetIndex ?? state.replay.index, 0, events.length - 1);
-}
-
-function currentReplayControlEvent() {
-  const events = replayTimelineEvents();
-  if (events.length === 0) return null;
-  return events[replayControlIndex(events)] || events[0];
-}
-
 function replayRoom() {
   const data = state.replay.data;
-  const event = currentReplayRenderEvent();
+  const event = currentReplayEvent();
   const table = event?.table || {};
   const hands = event?.hands || {};
   return {
@@ -969,7 +955,7 @@ function replayRoom() {
     hints: table.hints ?? 0,
     maxHints: data.settings?.maxHints ?? state.room.maxHints,
     colors: data.colors || COLORS,
-    lastResult: event?.result || null,
+    lastResult: table.lastResult || null,
     status: "ended",
     endReason: data.endReason,
     finalTurnsRemaining: table.finalTurnsRemaining ?? state.room.finalTurnsRemaining,
@@ -987,7 +973,7 @@ function replayRoom() {
 function replayStatusText() {
   const events = replayTimelineEvents();
   if (events.length === 0) return "Replay";
-  const event = currentReplayControlEvent();
+  const event = currentReplayEvent();
   const suffix = event?.timelineType === "layout" ? " Layout" : "";
   return `Replay${suffix}`;
 }
@@ -1003,7 +989,7 @@ function renderReplayPanel() {
   }
 
   const events = replayTimelineEvents();
-  const index = replayControlIndex(events);
+  const index = events.length === 0 ? 0 : clamp(state.replay.index, 0, events.length - 1);
   replayPreviousButton.disabled = !replayIsOpen() || index <= 0;
   replayNextButton.disabled = !replayIsOpen() || index >= events.length - 1;
   replayTimeline.disabled = !replayIsOpen();
@@ -1042,7 +1028,6 @@ function resetReplayState(options = {}) {
     loading: false,
     autoOpenedCode: null,
     actionAnimation: null,
-    settlingAction: null,
     suppressedEnterCardIds: []
   };
   renderReplayHandButtons();
@@ -1051,18 +1036,23 @@ function resetReplayState(options = {}) {
   }
 }
 
+function liveActionAnimationActive() {
+  return Boolean(state.tableStateHold || state.pendingDrawAnimation);
+}
+
 function ensureReplayOpenAtLatest() {
   if (!state.room || state.room.status !== "ended") return;
   if (state.replay.autoOpenedCode === state.room.code) return;
 
-  if (state.replay.data) {
-    openReplayAtLatest({ update: false });
+  if (!state.replay.data) {
+    if (!state.replay.loading) {
+      fetchReplay({ openAtLatest: true });
+    }
     return;
   }
 
-  if (!state.replay.loading) {
-    fetchReplay({ openAtLatest: true });
-  }
+  if (liveActionAnimationActive()) return;
+  openReplayAtLatest({ update: false });
 }
 
 function openReplayAtLatest(options = {}) {
@@ -1088,7 +1078,10 @@ async function fetchReplay(options = {}) {
     }
     state.replay.data = payload;
     if (options.openAtLatest) {
-      openReplayAtLatest();
+      ensureReplayOpenAtLatest();
+      if (replayIsOpen()) {
+        render();
+      }
     }
   } catch (error) {
     showToast(error.message);
@@ -1152,15 +1145,14 @@ function renderReplayHandButtons() {
 }
 
 function stepReplay(delta) {
-  const baseIndex = state.replay.actionAnimation?.targetIndex ?? state.replay.index;
-  setReplayIndex(baseIndex + delta, { animateAction: true });
+  setReplayIndex(state.replay.index + delta, { animateAction: true });
 }
 
 function setReplayIndex(index, options = {}) {
   const max = Math.max(0, (replayTimelineEvents().length || 1) - 1);
   const fromIndex = clamp(state.replay.index, 0, max);
   const targetIndex = clamp(index, 0, max);
-  if (state.replay.actionAnimation?.targetIndex === targetIndex) {
+  if (targetIndex === fromIndex) {
     renderReplayPanel();
     return;
   }
@@ -1215,10 +1207,6 @@ function animateReplayActionForwardTransition(plan) {
   if (!sourceElement) {
     return false;
   }
-  const path = actionResultPath(plan.result);
-  if (!path) {
-    return false;
-  }
 
   const snapshot = {
     key: `replay:${plan.event.seq}:${plan.result.action}:${plan.result.cardId}`,
@@ -1226,32 +1214,61 @@ function animateReplayActionForwardTransition(plan) {
     startRect: actionCardStartRect(sourceElement),
     concealed: sourceElement.classList.contains("concealed-card")
   };
+  if (snapshot.startRect.width <= 0 || snapshot.startRect.height <= 0) {
+    return false;
+  }
   const overlay = createActionCardOverlay(snapshot, {
-    knowledgeGrid: snapshot.concealed ? replayActionOverlayKnowledgeGrid(plan, replayTimelineEvents()[plan.fromIndex]) : null
+    knowledgeGrid: snapshot.concealed ? replayActionOverlayKnowledgeGrid(plan, plan.event) : null
   });
   overlay.classList.add("replay-action-overlay");
+  const ghost = plan.result.type === "firework" ? createFireworkGhost(plan.result) : null;
+
+  // Commit the target state first, then measure the real landing elements —
+  // predicted rects drift from the browser's actual layout.
+  const replacement = plan.event.replacementCard || null;
+  if (replacement) {
+    state.pendingDrawAnimation = {
+      key: snapshot.key,
+      seat: plan.result.actorSeat,
+      cardId: replacement.id
+    };
+  }
+  const animation = {
+    key: snapshot.key,
+    direction: plan.direction,
+    cardId: plan.result.cardId,
+    result: plan.result,
+    drawCard: replacement,
+    drawSeat: plan.result.actorSeat,
+    overlay,
+    ghost,
+    destElement: null,
+    timers: []
+  };
+  state.replay.actionAnimation = animation;
+  state.replay.index = plan.targetIndex;
+  render();
+
+  const path = actionResultPath(plan.result);
+  const destElement = replayActionResultElement(plan.result);
+  if (!path || !destElement) {
+    state.replay.actionAnimation = null;
+    gameView.dataset.replayAction = "idle";
+    ghost?.remove();
+    overlay.remove();
+    clearPendingDrawAnimation(snapshot.key, { update: false });
+    return true;
+  }
+  animation.destElement = destElement;
+  destElement.classList.add("replay-action-source-hidden");
+  if (ghost) {
+    document.body.append(ghost);
+  }
   if (!path.deflectRect) {
     overlay.classList.add("replay-transform-overlay");
   }
   document.body.append(overlay);
   primeActionOverlayTransition(overlay);
-  sourceElement.classList.add("replay-action-source-hidden");
-
-  const animation = {
-    key: snapshot.key,
-    targetIndex: plan.targetIndex,
-    direction: plan.direction,
-    cardId: plan.result.cardId,
-    result: plan.result,
-    visualEvent: replayActionVisualEvent(plan),
-    overlay,
-    sourceElement,
-    hiddenElements: [sourceElement],
-    timers: []
-  };
-  state.replay.actionAnimation = animation;
-  render();
-  syncReplayActionHiddenElements(animation);
 
   window.requestAnimationFrame(() => {
     overlay.classList.add("is-revealed");
@@ -1267,7 +1284,7 @@ function animateReplayActionForwardTransition(plan) {
       animation.timers
     );
     const finishTimer = window.setTimeout(() => {
-      finishReplayActionAnimation(snapshot.key);
+      finishReplayActionFlight(snapshot.key);
     }, moveDuration + REPLAY_ACTION_ANIMATION_TIMINGS.settle);
     animation.timers.push(finishTimer);
   }, revealDelay);
@@ -1275,29 +1292,79 @@ function animateReplayActionForwardTransition(plan) {
   return true;
 }
 
+function createFireworkGhost(result) {
+  const slot = fireworkElementForColor(result.card.color);
+  if (!slot) return null;
+  const rect = slot.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+
+  const previousRank = tableDisplayRoom()?.fireworks?.[result.card.color] || 0;
+  const ghost = document.createElement("div");
+  ghost.className = "firework-ghost firework-card-slot";
+  ghost.style.left = `${rect.left}px`;
+  ghost.style.top = `${rect.top}px`;
+  ghost.style.width = `${rect.width}px`;
+  ghost.style.height = `${rect.height}px`;
+  if (previousRank > 0) {
+    const card = document.createElement("div");
+    card.className = "firework-card";
+    card.append(createCardFace({ color: result.card.color, rank: previousRank }, { revealImmediately: true }));
+    ghost.append(card);
+  } else {
+    const emptyCard = document.createElement("div");
+    emptyCard.className = "firework-empty-card";
+    ghost.append(emptyCard);
+  }
+  return ghost;
+}
+
 function animateReplayActionReverseTransition(plan) {
   const sourceRect = actionResultTargetRect(plan.result);
   if (!sourceRect) {
     return false;
   }
+  const shouldConcealAtHand = replayReverseTargetConcealed(plan);
 
-  const targetRect = replayReverseTargetRect(plan);
-  if (!targetRect) {
-    return false;
-  }
-  if (targetRect.width <= 0 || targetRect.height <= 0) {
-    return false;
+  // Commit the earlier state first; the returning card re-enters the hand
+  // hidden, and we fly the overlay to its real measured position.
+  const animation = {
+    key: `replay:${plan.event.seq}:reverse:${plan.result.action}:${plan.result.cardId}`,
+    direction: plan.direction,
+    cardId: plan.result.cardId,
+    result: plan.result,
+    drawCard: null,
+    drawSeat: null,
+    overlay: null,
+    ghost: null,
+    destElement: null,
+    timers: []
+  };
+  state.replay.actionAnimation = animation;
+  state.replay.index = plan.targetIndex;
+  state.replay.suppressedEnterCardIds = [plan.result.cardId];
+  try {
+    render();
+  } finally {
+    state.replay.suppressedEnterCardIds = [];
   }
 
-  const sourceElement = replayReverseSourceElement(plan.result);
+  const destElement = cardElementForCardId(plan.result.cardId);
+  const targetRect = destElement ? actionCardStartRect(destElement) : null;
+  if (!targetRect || targetRect.width <= 0 || targetRect.height <= 0) {
+    state.replay.actionAnimation = null;
+    gameView.dataset.replayAction = "idle";
+    return true;
+  }
+  animation.destElement = destElement;
+  destElement.classList.add("replay-action-source-hidden");
+
   const startRect = replayReverseStartRect(sourceRect, targetRect);
   const snapshot = {
-    key: `replay:${plan.event.seq}:reverse:${plan.result.action}:${plan.result.cardId}`,
+    key: animation.key,
     result: plan.result,
     startRect,
     concealed: false
   };
-  const shouldConcealAtHand = replayReverseTargetConcealed(plan);
   const overlay = createActionCardOverlay(snapshot, {
     knowledgeGrid: shouldConcealAtHand ? replayActionOverlayKnowledgeGrid(plan, plan.event) : null
   });
@@ -1305,23 +1372,7 @@ function animateReplayActionReverseTransition(plan) {
   placeReplayReverseActionOverlay(overlay, startRect);
   document.body.append(overlay);
   primeActionOverlayTransition(overlay);
-  sourceElement?.classList.add("replay-action-source-hidden");
-
-  const animation = {
-    key: snapshot.key,
-    targetIndex: plan.targetIndex,
-    direction: plan.direction,
-    cardId: plan.result.cardId,
-    result: plan.result,
-    visualEvent: replayActionVisualEvent(plan),
-    overlay,
-    sourceElement,
-    hiddenElements: [sourceElement],
-    timers: []
-  };
-  state.replay.actionAnimation = animation;
-  render();
-  syncReplayActionHiddenElements(animation);
+  animation.overlay = overlay;
 
   window.requestAnimationFrame(() => {
     moveReplayReverseActionOverlay(overlay, startRect, targetRect, REPLAY_ACTION_MOVE_MS);
@@ -1334,43 +1385,10 @@ function animateReplayActionReverseTransition(plan) {
   });
 
   const finishTimer = window.setTimeout(() => {
-    finishReplayActionAnimation(snapshot.key);
+    finishReplayActionFlight(animation.key);
   }, replayReverseFinishDelay(shouldConcealAtHand));
   animation.timers.push(finishTimer);
   return true;
-}
-
-function replayActionVisualEvent(plan) {
-  const events = replayTimelineEvents();
-  const fromEvent = events[plan.fromIndex];
-  const targetEvent = events[plan.targetIndex];
-  if (!fromEvent || !targetEvent) return null;
-
-  return {
-    ...fromEvent,
-    hands: replayActionVisualHands(plan, fromEvent, targetEvent),
-    table: fromEvent.table,
-    knowledge: fromEvent.knowledge
-  };
-}
-
-function replayActionVisualHands(plan, fromEvent, targetEvent) {
-  const fromHands = fromEvent.hands || {};
-  const targetHands = targetEvent.hands || {};
-  return Object.fromEntries(Object.entries(fromHands).map(([seat, hand]) => {
-    const targetCardsById = new Map((targetHands[seat] || []).map((card) => [card.id, card]));
-    const cards = hand.flatMap((card) => {
-      if (seat === plan.result.actorSeat && card.id === plan.result.cardId) {
-        return [];
-      }
-      const targetCard = targetCardsById.get(card.id);
-      if (!targetCard) {
-        return [];
-      }
-      return [{ ...card, layout: targetCard.layout || card.layout }];
-    });
-    return [seat, cards];
-  }));
 }
 
 function replayActionOverlayKnowledgeGrid(plan, event) {
@@ -1382,57 +1400,7 @@ function replayActionOverlayKnowledgeGrid(plan, event) {
   return knowledge ? renderKnowledgeGrid(card, knowledge) : null;
 }
 
-function syncReplayActionHiddenElements(animation) {
-  if (!animation) return;
-
-  const elements = [...(animation.hiddenElements || [])];
-  if (animation.direction === "reverse") {
-    elements.push(replayReverseSourceElement(animation.result));
-    elements.push(cardElementForCardId(animation.cardId));
-  } else {
-    elements.push(cardElementForCardId(animation.cardId));
-  }
-
-  const uniqueElements = [];
-  for (const element of elements) {
-    if (element && !uniqueElements.includes(element)) {
-      element.classList.add("replay-action-source-hidden");
-      uniqueElements.push(element);
-    }
-  }
-  animation.hiddenElements = uniqueElements;
-  animation.sourceElement = uniqueElements[0] || animation.sourceElement;
-}
-
-function replayReverseTargetRect(plan) {
-  const seat = plan.result.actorSeat;
-  const hand = plan.event?.hands?.[seat] || [];
-  const cardIndex = hand.findIndex((card) => card.id === plan.result.cardId);
-  if (cardIndex === -1) return null;
-
-  const surface = seat === state.mySeat ? selfHand : opponentHand;
-  const surfaceRect = surface.getBoundingClientRect();
-  const surfaceSize = surfaceSizeFor(surface);
-  const cardSize = replayHandCardSize(surface);
-  const layout = normalizeLayout(hand[cardIndex].layout || fallbackLayout(cardIndex));
-  return {
-    left: surfaceRect.left + (surfaceSize.width * layout.x) / 100 - cardSize.width / 2,
-    top: surfaceRect.top + (surfaceSize.height * layout.y) / 100 - cardSize.height / 2,
-    width: cardSize.width,
-    height: cardSize.height,
-    rotation: layout.rotation
-  };
-}
-
-function replayHandCardSize(surface) {
-  const sample = surface.querySelector(".table-card") || document.querySelector(".table-card");
-  const bounds = sample?.getBoundingClientRect?.();
-  const width = sample?.offsetWidth || bounds?.width || 76;
-  const height = sample?.offsetHeight || bounds?.height || (width * 510) / 322;
-  return { width, height };
-}
-
-function replayReverseSourceElement(result) {
+function replayActionResultElement(result) {
   if (result.type === "firework") {
     return fireworkElementForColor(result.card.color);
   }
@@ -1494,113 +1462,46 @@ function primeActionOverlayTransition(overlay) {
   overlay.getBoundingClientRect();
 }
 
-function finishReplayActionAnimation(key) {
+function finishReplayActionFlight(key) {
   const animation = state.replay.actionAnimation;
   if (!animation || animation.key !== key) return;
-  state.replay.index = animation.targetIndex;
-  state.replay.suppressedEnterCardIds = animation.direction === "reverse" ? [animation.cardId] : [];
   for (const timer of animation.timers) {
     window.clearTimeout(timer);
   }
   state.replay.actionAnimation = null;
-  if (state.room) {
-    try {
-      render();
-    } finally {
-      state.replay.suppressedEnterCardIds = [];
-    }
-  } else {
-    state.replay.suppressedEnterCardIds = [];
+  animation.overlay?.remove();
+  animation.ghost?.remove();
+  unhideReplayActionDestination(animation.destElement);
+  gameView.dataset.replayAction = "idle";
+  if (animation.drawCard && state.room) {
+    animateReplayReplacementDraw(animation.key, animation.drawSeat, animation.drawCard);
   }
-  settleReplayActionOverlay(animation);
 }
 
 function cancelReplayActionAnimation() {
-  cancelReplayActionSettlement();
   const animation = state.replay.actionAnimation;
   if (!animation) return;
   for (const timer of animation.timers) {
     window.clearTimeout(timer);
   }
-  animation.overlay?.remove();
-  clearReplayActionHiddenElements(animation);
   state.replay.actionAnimation = null;
-}
-
-function settleReplayActionOverlay(animation) {
-  syncReplayActionCommitHiddenElements(animation);
-  clearReplayActionHiddenElements(animation, { except: animation.commitHiddenElements || [] });
-  if (!animation.overlay) {
-    clearReplayActionHiddenElements(animation);
-    return;
-  }
-
-  const settlement = {
-    overlay: animation.overlay,
-    hiddenElements: animation.commitHiddenElements || [],
-    frame: 0,
-    timer: 0
-  };
-  state.replay.settlingAction = settlement;
-  settlement.frame = window.requestAnimationFrame(() => {
-    settlement.overlay.classList.add("is-settling");
-    settlement.timer = window.setTimeout(() => {
-      clearReplayActionSettlement(settlement);
-    }, REPLAY_ACTION_COMMIT_FADE_MS);
-  });
-}
-
-function syncReplayActionCommitHiddenElements(animation) {
-  if (!animation) return;
-  const elements = animation.direction === "reverse"
-    ? [cardElementForCardId(animation.cardId)]
-    : [replayActionResultElement(animation.result)];
-
-  const hiddenElements = [];
-  for (const element of elements) {
-    if (!element || hiddenElements.includes(element)) continue;
-    element.classList.add("replay-action-source-hidden");
-    hiddenElements.push(element);
-    if (animation.hiddenElements?.includes(element)) continue;
-    animation.hiddenElements = [...(animation.hiddenElements || []), element];
-  }
-  animation.commitHiddenElements = hiddenElements;
-}
-
-function replayActionResultElement(result) {
-  if (result.type === "firework") {
-    return fireworkElementForColor(result.card.color);
-  }
-  return discardElementForCard(result.cardId) || discardElementForCard(result.card.id);
-}
-
-function cancelReplayActionSettlement() {
-  clearReplayActionSettlement(state.replay.settlingAction);
-}
-
-function clearReplayActionSettlement(settlement) {
-  if (!settlement) return;
-  if (settlement.frame) {
-    window.cancelAnimationFrame(settlement.frame);
-  }
-  if (settlement.timer) {
-    window.clearTimeout(settlement.timer);
-  }
-  settlement.overlay?.remove();
-  for (const element of settlement.hiddenElements || []) {
-    element?.classList.remove("replay-action-source-hidden");
-  }
-  if (state.replay.settlingAction === settlement) {
-    state.replay.settlingAction = null;
+  animation.overlay?.remove();
+  animation.ghost?.remove();
+  animation.destElement?.classList.remove("replay-action-source-hidden");
+  gameView.dataset.replayAction = "idle";
+  if (animation.drawCard) {
+    clearPendingDrawAnimation(animation.key, { update: false });
   }
 }
 
-function clearReplayActionHiddenElements(animation, options = {}) {
-  const except = options.except || [];
-  const elements = animation?.hiddenElements?.length ? animation.hiddenElements : [animation?.sourceElement];
-  for (const element of elements) {
-    if (except.includes(element)) continue;
-    element?.classList.remove("replay-action-source-hidden");
+function unhideReplayActionDestination(element) {
+  if (!element) return;
+  element.classList.remove("replay-action-source-hidden");
+  // Restart the last-action ring so it enters as the card lands, not while hidden.
+  if (element.classList.contains("last-result-highlight")) {
+    element.classList.remove("last-result-highlight");
+    element.getBoundingClientRect();
+    element.classList.add("last-result-highlight");
   }
 }
 
@@ -1615,6 +1516,7 @@ function releaseTableStateHold(key) {
   if (!state.tableStateHold || state.tableStateHold.key !== key) return;
   state.tableStateHold = null;
   if (state.room) {
+    ensureReplayOpenAtLatest();
     if (state.activeDrag) {
       state.pendingRoom = state.room;
       renderActiveDragSafeState();
@@ -1921,11 +1823,11 @@ function renderKnowledgeGrid(card, knowledge) {
 
 function replayKnowledgeForCard(cardId, seat) {
   const normalizedSeat = normalizeSeatOption(seat, state.mySeat);
-  return currentReplayRenderEvent()?.knowledge?.[normalizedSeat]?.cards?.[cardId] || null;
+  return currentReplayEvent()?.knowledge?.[normalizedSeat]?.cards?.[cardId] || null;
 }
 
 function replayClueSelection() {
-  const event = currentReplayRenderEvent();
+  const event = currentReplayEvent();
   if (event?.type !== "give-clue") return null;
   return {
     seat: event.targetSeat,
@@ -3417,18 +3319,31 @@ function finishActionOverlay(snapshot, overlay) {
 function animateReplacementDraw(snapshot) {
   const replacement = snapshot.replacement;
   if (!replacement) return;
+  animateDrawIntoHand(snapshot.key, replacement);
+}
 
+function animateReplayReplacementDraw(key, seat, card) {
+  const concealed = !cardHasDetails(card) || replayHandView(seat) === "knowledge";
+  animateDrawIntoHand(key, {
+    seat,
+    card,
+    concealed,
+    knowledgeGrid: concealed ? renderKnowledgeGrid(card, replayKnowledgeForCard(card.id, seat)) : null
+  });
+}
+
+function animateDrawIntoHand(key, replacement) {
   const surface = replacement.seat === state.mySeat ? selfHand : opponentHand;
   const targetElement = cardElementById(surface, replacement.card.id);
   const sourceRect = deckSourceRect();
   if (!targetElement || !sourceRect) {
-    clearPendingDrawAnimation(snapshot.key);
+    clearPendingDrawAnimation(key);
     return;
   }
 
   const targetRect = actionCardStartRect(targetElement);
   if (targetRect.width <= 0 || targetRect.height <= 0) {
-    clearPendingDrawAnimation(snapshot.key);
+    clearPendingDrawAnimation(key);
     return;
   }
 
@@ -3442,21 +3357,26 @@ function animateReplacementDraw(snapshot) {
   });
 
   window.setTimeout(() => {
-    clearPendingDrawAnimation(snapshot.key);
+    clearPendingDrawAnimation(key);
     overlay.classList.add("is-settled");
     window.setTimeout(() => {
       overlay.remove();
     }, 180);
-  }, 620);
+  }, DRAW_CARD_MOVE_MS);
 }
 
 function createDrawCardOverlay(replacement, rect) {
   const overlay = document.createElement("article");
   overlay.className = "draw-card-overlay";
   placeDrawCardOverlay(overlay, rect, 0.42);
-  overlay.append(replacement.concealed || !cardHasDetails(replacement.card)
+  const concealed = replacement.concealed || !cardHasDetails(replacement.card);
+  const visual = concealed
     ? createCardBack({ revealImmediately: true })
-    : createCardFace(replacement.card, { revealImmediately: true }));
+    : createCardFace(replacement.card, { revealImmediately: true });
+  if (concealed && replacement.knowledgeGrid) {
+    visual.append(replacement.knowledgeGrid);
+  }
+  overlay.append(visual);
   return overlay;
 }
 
@@ -3498,6 +3418,7 @@ function clearPendingDrawAnimation(key, options = {}) {
   if (key && state.pendingDrawAnimation.key !== key) return;
   state.pendingDrawAnimation = null;
   if (options.update !== false && state.room) {
+    ensureReplayOpenAtLatest();
     if (state.activeDrag) {
       state.pendingRoom = state.room;
       renderActiveDragSafeState();
