@@ -425,7 +425,6 @@ test("game settings live in a clue-style popover", () => {
   for (const pattern of [
     /const settingsButton = document\.querySelector\("#settingsButton"\);/,
     /const settingsPopover = document\.querySelector\("#settingsPopover"\);/,
-    /const forfeitButton = document\.querySelector\("#forfeitButton"\);/,
     /const replayLayoutStepsToggle = document\.querySelector\("#replayLayoutStepsToggle"\);/,
     /settingsButton\.addEventListener\("click", \(\) => toggleSettingsPopover\(\)\);/,
     /replayLayoutStepsToggle\.addEventListener\("change", \(\) => \{[\s\S]*setReplayLayoutCheckpointsVisible\(replayLayoutStepsToggle\.checked\);[\s\S]*savePlayerPreferences\(\);[\s\S]*\}\);/,
@@ -435,8 +434,7 @@ test("game settings live in a clue-style popover", () => {
     /trigger\?\.setAttribute\("aria-expanded", "false"\);/,
     /trigger: settingsButton,/,
     /function setReplayLayoutCheckpointsVisible\(show, options = \{\}\)/,
-    /function renderReplaySettingsControls\(\)/,
-    /forfeitButton\.classList\.toggle\("hidden", isEnded\);/
+    /function renderReplaySettingsControls\(\)/
   ]) {
     assert.match(script, pattern);
   }

@@ -983,9 +983,10 @@ function renderReplayPanel() {
 }
 
 function renderReplaySettingsControls() {
+  const hasActiveRoom = Boolean(state.room && state.room.status !== "ended");
   const isEnded = state.room?.status === "ended";
-  forfeitButton.classList.toggle("hidden", isEnded);
-  forfeitButton.disabled = isEnded;
+  forfeitButton.classList.toggle("hidden", !hasActiveRoom);
+  forfeitButton.disabled = !hasActiveRoom;
   replayLayoutStepsSetting.classList.toggle("hidden", !isEnded);
   replayLayoutStepsToggle.disabled = !isEnded;
   replayLayoutStepsToggle.checked = Boolean(state.replay.settings?.showLayoutCheckpoints);
