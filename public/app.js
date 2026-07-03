@@ -133,6 +133,7 @@ const manualRotationToggle = document.querySelector("#manualRotationToggle");
 const replayLayoutStepsSetting = document.querySelector("#replayLayoutStepsSetting");
 const replayLayoutStepsToggle = document.querySelector("#replayLayoutStepsToggle");
 const resetButton = document.querySelector("#resetButton");
+const forfeitButton = document.querySelector("#forfeitButton");
 const replayPanel = document.querySelector("#replayPanel");
 const replayPreviousButton = document.querySelector("#replayPreviousButton");
 const replayNextButton = document.querySelector("#replayNextButton");
@@ -239,6 +240,17 @@ resetButton.addEventListener("click", async () => {
   const updated = await action({ type: "reset" });
   if (updated) {
     resetReplayState();
+    resetLocalSelections({ update: false });
+    applyRoomState(updated);
+  }
+});
+
+forfeitButton.addEventListener("click", async () => {
+  closeSettingsPopover();
+  if (!state.room || state.room.status === "ended") return;
+  if (!window.confirm("End this game and open the replay?")) return;
+  const updated = await action({ type: "forfeit" });
+  if (updated) {
     resetLocalSelections({ update: false });
     applyRoomState(updated);
   }
@@ -972,6 +984,8 @@ function renderReplayPanel() {
 
 function renderReplaySettingsControls() {
   const isEnded = state.room?.status === "ended";
+  forfeitButton.classList.toggle("hidden", isEnded);
+  forfeitButton.disabled = isEnded;
   replayLayoutStepsSetting.classList.toggle("hidden", !isEnded);
   replayLayoutStepsToggle.disabled = !isEnded;
   replayLayoutStepsToggle.checked = Boolean(state.replay.settings?.showLayoutCheckpoints);

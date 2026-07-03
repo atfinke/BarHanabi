@@ -407,6 +407,36 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
   assert.equal(resetReplay.body.error, "Replay is available after the game ends.");
 });
 
+test("forfeit ends the active game and preserves replay data", async (t) => {
+  const server = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: { ...process.env, PORT: String(PORT) },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  t.after(() => server.kill("SIGTERM"));
+  await waitForServer(server);
+
+  const room = await createRoom();
+  const forfeit = await postAction({
+    code: room.code,
+    viewerSeat: "A",
+    type: "forfeit"
+  });
+  assert.equal(forfeit.response.status, 200, JSON.stringify(forfeit.body));
+  assert.equal(forfeit.body.status, "ended");
+  assert.equal(forfeit.body.endReason, "forfeit");
+
+  const replay = await readReplay(room.code);
+  assert.equal(replay.response.status, 200, JSON.stringify(replay.body));
+  assert.equal(replay.body.status, "ended");
+  assert.equal(replay.body.endReason, "forfeit");
+  assert.equal(
+    replay.body.actionEvents.at(-1).type,
+    "end-game",
+    "forfeit should leave a terminal replay event"
+  );
+});
+
 test("replay CSV exposes pre-action hand state and newest pickup context", async (t) => {
   const server = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
