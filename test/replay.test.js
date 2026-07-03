@@ -9,14 +9,14 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForServer(process) {
+async function waitForServer(process, base = BASE) {
   const started = Date.now();
   while (Date.now() - started < 5000) {
     if (process.exitCode !== null) {
       throw new Error("server exited before becoming ready");
     }
     try {
-      const response = await fetch(BASE);
+      const response = await fetch(base);
       if (response.ok) return;
     } catch {}
     await wait(100);
@@ -24,8 +24,8 @@ async function waitForServer(process) {
   throw new Error("server did not become ready");
 }
 
-async function createRoom(settings = {}) {
-  const response = await fetch(`${BASE}/api/rooms`, {
+async function createRoom(settings = {}, base = BASE) {
+  const response = await fetch(`${base}/api/rooms`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(settings)
@@ -51,8 +51,8 @@ async function readState(code, seat) {
   return JSON.parse(dataLine.slice(6));
 }
 
-async function postAction(payload) {
-  const response = await fetch(`${BASE}/api/actions`, {
+async function postAction(payload, base = BASE) {
+  const response = await fetch(`${base}/api/actions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload)
@@ -61,8 +61,8 @@ async function postAction(payload) {
   return { response, body };
 }
 
-async function readReplay(code) {
-  const response = await fetch(`${BASE}/api/replay?code=${encodeURIComponent(code)}`);
+async function readReplay(code, base = BASE) {
+  const response = await fetch(`${base}/api/replay?code=${encodeURIComponent(code)}`);
   const text = await response.text();
   let body;
   try {
@@ -408,25 +408,26 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
 });
 
 test("forfeit ends the active game and preserves replay data", async (t) => {
+  const base = "http://127.0.0.1:" + (PORT + 1);
   const server = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
-    env: { ...process.env, PORT: String(PORT) },
+    env: { ...process.env, PORT: String(PORT + 1) },
     stdio: ["ignore", "pipe", "pipe"]
   });
   t.after(() => server.kill("SIGTERM"));
-  await waitForServer(server);
+  await waitForServer(server, base);
 
-  const room = await createRoom();
+  const room = await createRoom({}, base);
   const forfeit = await postAction({
     code: room.code,
     viewerSeat: "A",
     type: "forfeit"
-  });
+  }, base);
   assert.equal(forfeit.response.status, 200, JSON.stringify(forfeit.body));
   assert.equal(forfeit.body.status, "ended");
   assert.equal(forfeit.body.endReason, "forfeit");
 
-  const replay = await readReplay(room.code);
+  const replay = await readReplay(room.code, base);
   assert.equal(replay.response.status, 200, JSON.stringify(replay.body));
   assert.equal(replay.body.status, "ended");
   assert.equal(replay.body.endReason, "forfeit");
