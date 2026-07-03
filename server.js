@@ -250,17 +250,23 @@ function replaySnapshot(room) {
 }
 
 // Callers that may end the game must capture seq before finishTurn/endGame so the sort keeps their event ahead of end-game.
-function appendActionEvent(room, type, payload = {}, seq = nextReplaySeq(room)) {
+function appendActionEvent(room, type, payload = {}, options = {}) {
   const snapshot = replaySnapshot(room);
-  room.actionEvents.push({
-    seq,
+  const event = {
+    seq: options.seq ?? nextReplaySeq(room),
     at: Date.now(),
     type,
     ...payload,
     hands: snapshot.hands,
     table: snapshot.table,
     knowledge: snapshot.knowledge
-  });
+  };
+  if (options.preSnapshot) {
+    event.preHands = options.preSnapshot.hands;
+    event.preTable = options.preSnapshot.table;
+    event.preKnowledge = options.preSnapshot.knowledge;
+  }
+  room.actionEvents.push(event);
   room.actionEvents.sort((a, b) => a.seq - b.seq);
 }
 
@@ -832,6 +838,7 @@ function handleAction(room, action) {
     if (room.hints <= 0) {
       throw new Error("No hints left.");
     }
+    const preSnapshot = replaySnapshot(room);
     clearCommittedClueForActingPlayer(room, player);
     setClueSelection(room, player, action, { committed: true });
     clearLiveCluePreview(room);
@@ -846,7 +853,7 @@ function handleAction(room, action) {
       targetSeat: room.clueSelection.seat,
       cardIds: [...room.clueSelection.cardIds],
       clue: { ...room.clueSelection.clue }
-    }, seq);
+    }, { seq, preSnapshot });
     touch(room);
     return room;
   }
@@ -892,6 +899,7 @@ function handleAction(room, action) {
   if (type === "discard") {
     assertGameInProgress(room);
     assertPlayerTurn(room, player);
+    const preSnapshot = replaySnapshot(room);
     const card = takeCard(player, action);
     room.discard.push(card);
     room.lastResult = actionResult("discard", "discard", player, card);
@@ -914,7 +922,7 @@ function handleAction(room, action) {
       result: room.lastResult,
       drewReplacement: Boolean(replacement),
       replacementCard: replacement ? replayCard(replacement) : null
-    }, seq);
+    }, { seq, preSnapshot });
     touch(room);
     return room;
   }
@@ -922,6 +930,7 @@ function handleAction(room, action) {
   if (type === "play") {
     assertGameInProgress(room);
     assertPlayerTurn(room, player);
+    const preSnapshot = replaySnapshot(room);
     const card = takeCard(player, action);
     const nextRank = room.fireworks[card.color] + 1;
     let message = "";
@@ -957,7 +966,7 @@ function handleAction(room, action) {
         playable: true,
         drewReplacement: false,
         replacementCard: null
-      }, seq);
+      }, { seq, preSnapshot });
       touch(room);
       return room;
     }
@@ -974,7 +983,7 @@ function handleAction(room, action) {
         playable: false,
         drewReplacement: false,
         replacementCard: null
-      }, seq);
+      }, { seq, preSnapshot });
       touch(room);
       return room;
     }
@@ -992,7 +1001,7 @@ function handleAction(room, action) {
       playable: card.rank === nextRank,
       drewReplacement: Boolean(replacement),
       replacementCard: replacement ? replayCard(replacement) : null
-    }, seq);
+    }, { seq, preSnapshot });
     touch(room);
     return room;
   }
@@ -1091,9 +1100,14 @@ function replayState(room) {
       name: player.name,
       hand: player.hand.map(replayCard)
     })),
-    actionEvents: room.actionEvents,
+    actionEvents: room.actionEvents.map(publicReplayEvent),
     layoutEvents: room.layoutEvents
   };
+}
+
+function publicReplayEvent(event) {
+  const { preHands, preTable, preKnowledge, ...publicEvent } = event;
+  return publicEvent;
 }
 
 const REPLAY_CSV_COLUMNS = [
@@ -1118,8 +1132,11 @@ const REPLAY_CSV_COLUMNS = [
   "play_succeeded",
   "drew_replacement",
   "replacement_card_id",
+  "replacement_card_color",
+  "replacement_card_rank",
   "hand_seat",
   "hand_index",
+  "is_newest_card",
   "card_id",
   "card_color",
   "card_rank",
@@ -1129,6 +1146,16 @@ const REPLAY_CSV_COLUMNS = [
   "layout_x",
   "layout_y",
   "layout_rotation",
+  "pre_deck_count",
+  "pre_turn_seat",
+  "pre_status",
+  "pre_final_turns_remaining",
+  "pre_score",
+  "pre_hints",
+  "pre_bombs",
+  "pre_fireworks",
+  "pre_discard_ids",
+  "pre_end_reason",
   "deck_count",
   "turn_seat",
   "status",
@@ -1160,6 +1187,7 @@ function replayCsv(room) {
   const moveNumberBySeq = buildMoveNumberBySeq(events);
 
   for (const event of events) {
+    rows.push(...preHandCsvRows(room, event, moveNumberBySeq));
     rows.push(csvRow(eventCsvFields(room, event, moveNumberBySeq)));
     if (event.type === "layout") {
       rows.push(...layoutCheckpointCsvRows(room, event, moveNumberBySeq));
@@ -1198,14 +1226,16 @@ function eventCsvFields(room, event, moveNumberBySeq) {
   const card = event.card || null;
   const replacement = event.replacementCard || null;
   const result = event.result || {};
+  const actorSeat = event.actorSeat || event.seat;
   return {
     ...roomCsvFields(room),
     ...tableCsvFields(event.table, room),
+    ...prefixedTableCsvFields("pre_", event.preTable, room),
     row_type: "event",
     event_seq: event.seq,
     event_type: event.type,
     event_at: event.at,
-    actor_seat: event.actorSeat || event.seat,
+    actor_seat: actorSeat,
     target_seat: event.targetSeat,
     action_card_id: card?.id || event.cardId,
     action_card_color: card?.color,
@@ -1219,6 +1249,8 @@ function eventCsvFields(room, event, moveNumberBySeq) {
     play_succeeded: event.playable,
     drew_replacement: event.drewReplacement,
     replacement_card_id: replacement?.id,
+    replacement_card_color: replacement?.color,
+    replacement_card_rank: replacement?.rank,
     end_reason: event.table?.endReason || event.reason,
     move_number: moveNumberBySeq.get(event.seq)
   };
@@ -1227,12 +1259,14 @@ function eventCsvFields(room, event, moveNumberBySeq) {
 function layoutCheckpointCsvRows(room, event, moveNumberBySeq) {
   const rows = [];
   const hand = event.hands?.[event.seat] || [];
+  const newestCard = newestHandCard(hand);
   hand.forEach((card, index) => {
     rows.push(csvRow({
       ...eventCsvFields(room, event, moveNumberBySeq),
       row_type: "layout_checkpoint",
       hand_seat: event.seat,
       hand_index: index,
+      is_newest_card: card.id === newestCard?.id,
       card_id: card.id,
       card_color: card.color,
       card_rank: card.rank,
@@ -1244,18 +1278,40 @@ function layoutCheckpointCsvRows(room, event, moveNumberBySeq) {
   return rows;
 }
 
+function preHandCsvRows(room, event, moveNumberBySeq) {
+  if (!event.preHands || !event.preTable) return [];
+  return snapshotHandCsvRows(room, event, moveNumberBySeq, {
+    rowType: "pre_hand_card",
+    hands: event.preHands,
+    table: event.preTable,
+    knowledge: event.preKnowledge
+  });
+}
+
 function handCsvRows(room, event, moveNumberBySeq) {
+  return snapshotHandCsvRows(room, event, moveNumberBySeq, {
+    rowType: "hand_card",
+    hands: event.hands,
+    table: event.table,
+    knowledge: event.knowledge
+  });
+}
+
+function snapshotHandCsvRows(room, event, moveNumberBySeq, snapshot) {
   const rows = [];
   for (const seat of ["A", "B"]) {
-    const hand = event.hands?.[seat] || [];
-    const knowledge = event.knowledge?.[seat]?.cards || {};
+    const hand = snapshot.hands?.[seat] || [];
+    const knowledge = snapshot.knowledge?.[seat]?.cards || {};
+    const newestCard = newestHandCard(hand);
     hand.forEach((card, index) => {
       const cardKnowledge = knowledge[card.id] || {};
       rows.push(csvRow({
         ...eventCsvFields(room, event, moveNumberBySeq),
-        row_type: "hand_card",
+        ...tableCsvFields(snapshot.table, room),
+        row_type: snapshot.rowType,
         hand_seat: seat,
         hand_index: index,
+        is_newest_card: card.id === newestCard?.id,
         card_id: card.id,
         card_color: card.color,
         card_rank: card.rank,
@@ -1271,6 +1327,11 @@ function handCsvRows(room, event, moveNumberBySeq) {
     });
   }
   return rows;
+}
+
+function newestHandCard(hand) {
+  if (!Array.isArray(hand) || hand.length === 0) return null;
+  return hand[hand.length - 1];
 }
 
 function roomCsvFields(room) {
@@ -1300,6 +1361,13 @@ function tableCsvFields(table = {}, room) {
     discard_ids: (table.discard || []).map((card) => card.id).join("|"),
     end_reason: table.endReason
   };
+}
+
+function prefixedTableCsvFields(prefix, table, room) {
+  if (!table) return {};
+  return Object.fromEntries(
+    Object.entries(tableCsvFields(table, room)).map(([key, value]) => [`${prefix}${key}`, value])
+  );
 }
 
 function serializeFireworks(fireworks = {}, colors) {

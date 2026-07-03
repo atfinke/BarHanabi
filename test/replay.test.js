@@ -407,6 +407,93 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
   assert.equal(resetReplay.body.error, "Replay is available after the game ends.");
 });
 
+test("replay CSV exposes pre-action hand state and newest pickup context", async (t) => {
+  const server = spawn(process.execPath, ["server.js"], {
+    cwd: process.cwd(),
+    env: { ...process.env, PORT: String(PORT) },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  t.after(() => server.kill("SIGTERM"));
+  await waitForServer(server);
+
+  const scenario = await createReplayScenario();
+  const bDiscardCard = scenario.bVisibleHand[0];
+  const bPreDiscardNewest = scenario.bVisibleHand[scenario.bVisibleHand.length - 1];
+
+  const clueTurn = await postAction({
+    code: scenario.room.code,
+    viewerSeat: "A",
+    type: "give-clue",
+    targetSeat: "B",
+    cardIds: scenario.clue.cardIds,
+    clue: { kind: "rank", value: scenario.clue.rank }
+  });
+  assert.equal(clueTurn.response.status, 200, JSON.stringify(clueTurn.body));
+
+  const discardTurn = await postAction({
+    code: scenario.room.code,
+    viewerSeat: "B",
+    type: "discard",
+    cardId: bDiscardCard.id
+  });
+  assert.equal(discardTurn.response.status, 200, JSON.stringify(discardTurn.body));
+
+  const endingPlay = await postAction({
+    code: scenario.room.code,
+    viewerSeat: "A",
+    type: "play",
+    cardId: scenario.visibleUniqueA.id
+  });
+  assert.equal(endingPlay.response.status, 200, JSON.stringify(endingPlay.body));
+  assert.equal(endingPlay.body.status, "ended");
+
+  const replay = await readReplay(scenario.room.code);
+  assert.equal(replay.response.status, 200, JSON.stringify(replay.body));
+  const discardEvent = replay.body.actionEvents.find((event) => event.type === "discard");
+  assert.ok(discardEvent, "expected a discard event");
+  assert.equal(discardEvent.preHands, undefined, "pre-action CSV snapshots should stay out of replay JSON");
+  assert.equal(discardEvent.preTable, undefined, "pre-action CSV snapshots should stay out of replay JSON");
+  assert.equal(discardEvent.preKnowledge, undefined, "pre-action CSV snapshots should stay out of replay JSON");
+
+  const replayCsv = await readReplayCsv(scenario.room.code);
+  assert.equal(replayCsv.response.status, 200, replayCsv.text);
+  const rows = csvRows(replayCsv.text);
+  const discardEventRow = rows.find((row) => row.row_type === "event" && row.event_type === "discard");
+  assert.ok(discardEventRow, "expected a discard event row");
+  assert.equal(discardEventRow.pre_turn_seat, "B");
+  assert.equal(discardEventRow.pre_deck_count, "50");
+  assert.equal(discardEventRow.deck_count, "49");
+  assert.notEqual(discardEventRow.replacement_card_id, "");
+  assert.equal(discardEventRow.replacement_card_color, discardEvent.replacementCard.color);
+  assert.equal(discardEventRow.replacement_card_rank, String(discardEvent.replacementCard.rank));
+
+  const preDiscardHandRows = rows.filter((row) =>
+    row.row_type === "pre_hand_card" &&
+    row.event_type === "discard" &&
+    row.hand_seat === "B"
+  );
+  assert.deepEqual(
+    preDiscardHandRows.map((row) => row.card_id),
+    scenario.bVisibleHand.map((card) => card.id),
+    "pre_hand_card rows should preserve the actor's decision-time hand order"
+  );
+  assert.equal(
+    preDiscardHandRows.find((row) => row.card_id === bPreDiscardNewest.id)?.is_newest_card,
+    "true"
+  );
+
+  const postDiscardHandRows = rows.filter((row) =>
+    row.row_type === "hand_card" &&
+    row.event_type === "discard" &&
+    row.hand_seat === "B"
+  );
+  assert.equal(
+    postDiscardHandRows.find((row) => row.card_id === discardEventRow.replacement_card_id)?.is_newest_card,
+    "true",
+    "the replacement card should be marked as the newest card in the post-action hand"
+  );
+});
+
 function rankLabel(rank, count) {
   const labels = {
     1: "One",
