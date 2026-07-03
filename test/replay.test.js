@@ -457,6 +457,9 @@ test("replay CSV exposes pre-action hand state and newest pickup context", async
 
   const replayCsv = await readReplayCsv(scenario.room.code);
   assert.equal(replayCsv.response.status, 200, replayCsv.text);
+  const header = replayCsv.text.split("\n")[0].split(",");
+  assert.equal(header.includes("replacement_card_color"), false);
+  assert.equal(header.includes("replacement_card_rank"), false);
   const rows = csvRows(replayCsv.text);
   const discardEventRow = rows.find((row) => row.row_type === "event" && row.event_type === "discard");
   assert.ok(discardEventRow, "expected a discard event row");
@@ -464,8 +467,6 @@ test("replay CSV exposes pre-action hand state and newest pickup context", async
   assert.equal(discardEventRow.pre_deck_count, "50");
   assert.equal(discardEventRow.deck_count, "49");
   assert.notEqual(discardEventRow.replacement_card_id, "");
-  assert.equal(discardEventRow.replacement_card_color, discardEvent.replacementCard.color);
-  assert.equal(discardEventRow.replacement_card_rank, String(discardEvent.replacementCard.rank));
 
   const preDiscardHandRows = rows.filter((row) =>
     row.row_type === "pre_hand_card" &&

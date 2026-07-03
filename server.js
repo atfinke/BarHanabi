@@ -1132,8 +1132,6 @@ const REPLAY_CSV_COLUMNS = [
   "play_succeeded",
   "drew_replacement",
   "replacement_card_id",
-  "replacement_card_color",
-  "replacement_card_rank",
   "hand_seat",
   "hand_index",
   "is_newest_card",
@@ -1249,8 +1247,6 @@ function eventCsvFields(room, event, moveNumberBySeq) {
     play_succeeded: event.playable,
     drew_replacement: event.drewReplacement,
     replacement_card_id: replacement?.id,
-    replacement_card_color: replacement?.color,
-    replacement_card_rank: replacement?.rank,
     end_reason: event.table?.endReason || event.reason,
     move_number: moveNumberBySeq.get(event.seq)
   };

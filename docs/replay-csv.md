@@ -42,7 +42,7 @@
 | `result_pile` | Where the card landed: `firework` (successful play) or `discard` (discard, or failed play). |
 | `result_action` | What the player attempted: `play` or `discard`. `result_action=play` + `result_pile=discard` = misplay. |
 | `play_succeeded` | `true`/`false` on play events. |
-| `drew_replacement` / `replacement_card_id` / `replacement_card_color` / `replacement_card_rank` | Whether a replacement card was drawn, and its identity. |
+| `drew_replacement` / `replacement_card_id` | Whether a replacement card was drawn, and which card id was drawn. Join to the post-action `hand_card` row for that card's identity, layout, and `is_newest_card=true`. |
 
 ### Per-card snapshot (`pre_hand_card` / `hand_card` / `layout_checkpoint` rows)
 | Column | Meaning |
