@@ -109,11 +109,12 @@ async function createReplayScenario() {
     const aVisibleHand = playerForSeat(stateB, "A").hand;
     const bVisibleHand = playerForSeat(stateA, "B").hand;
     const visibleUniqueA = aVisibleHand.find((card) => card.rank === 5);
+    const rainbowMoveCard = aVisibleHand.find((card) => card.color === "rainbow");
     const bUnplayable = bVisibleHand.find((card) => card.rank !== 1);
     const clue = rankClueCandidatesForTarget(stateA, "B")[0];
 
-    if (visibleUniqueA && bUnplayable && clue) {
-      return { room, stateA, stateB, aVisibleHand, bVisibleHand, visibleUniqueA, bUnplayable, clue };
+    if (visibleUniqueA && rainbowMoveCard && bUnplayable && clue) {
+      return { room, stateA, stateB, aVisibleHand, bVisibleHand, visibleUniqueA, rainbowMoveCard, bUnplayable, clue };
     }
   }
 
@@ -136,7 +137,8 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
   const activeReplayCsv = await readReplayCsv(scenario.room.code);
   assert.equal(activeReplayCsv.response.status, 400, activeReplayCsv.text);
 
-  const aHiddenCard = playerForSeat(scenario.stateA, "A").hand[0];
+  const aHiddenCard = playerForSeat(scenario.stateA, "A").hand.find((card) => card.id === scenario.rainbowMoveCard.id);
+  assert.ok(aHiddenCard, "expected the local hidden hand to contain the visible rainbow card id");
   const movedCardIdentity = scenario.aVisibleHand.find((card) => card.id === aHiddenCard.id);
   assert.ok(movedCardIdentity);
   const preview = await postAction({
@@ -225,6 +227,39 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
     "end-game"
   ]);
   const [startEvent, clueSnapshotEvent, playSnapshotEvent, endSnapshotEvent] = replay.body.actionEvents;
+  assert.ok(Array.isArray(replay.body.highlights));
+  const highlightsByType = replay.body.highlights.reduce((groups, highlight) => {
+    groups[highlight.type] = groups[highlight.type] || [];
+    groups[highlight.type].push(highlight);
+    return groups;
+  }, {});
+  assert.equal(highlightsByType.clue, undefined, "ordinary clue actions should not become highlights");
+  assert.ok(highlightsByType["missed-play"]?.length >= 1, "expected a missed-play highlight");
+  assert.ok(highlightsByType["game-end"]?.length >= 1, "expected a game-end highlight");
+  assert.ok(highlightsByType["wild-card-move"]?.length >= 1, "expected a rainbow movement highlight");
+  const missedPlayHighlight = highlightsByType["missed-play"][0];
+  assert.equal(missedPlayHighlight.seq, playSnapshotEvent.seq);
+  assert.equal(missedPlayHighlight.actorSeat, "B");
+  assert.equal(missedPlayHighlight.card.id, scenario.bUnplayable.id);
+  assert.equal(missedPlayHighlight.bombsBefore, 0);
+  assert.equal(missedPlayHighlight.bombsAfter, 0);
+  assert.equal(missedPlayHighlight.scoreBefore, 0);
+  assert.equal(missedPlayHighlight.scoreAfter, 0);
+  assert.equal(missedPlayHighlight.scoreDelta, 0);
+  assert.equal(missedPlayHighlight.scorePercentAfter, 0);
+  assert.equal(missedPlayHighlight.endReason, "strikes");
+  assert.match(missedPlayHighlight.summary, /ended the game/);
+  const wildMoveHighlight = highlightsByType["wild-card-move"].find((highlight) => highlight.card.id === aHiddenCard.id);
+  assert.ok(wildMoveHighlight, "expected a wild-card movement highlight for the moved rainbow card");
+  assert.equal(wildMoveHighlight.seq, replay.body.layoutEvents[0].seq);
+  assert.equal(wildMoveHighlight.card.color, "rainbow");
+  assert.deepEqual(wildMoveHighlight.layout, { x: 42, y: 46, rotation: 7 });
+  const gameEndHighlight = highlightsByType["game-end"][0];
+  assert.equal(gameEndHighlight.seq, endSnapshotEvent.seq);
+  assert.equal(gameEndHighlight.moveNumber, 2);
+  assert.equal(gameEndHighlight.scoreAfter, 0);
+  assert.equal(gameEndHighlight.scorePercentAfter, 0);
+  assert.equal(gameEndHighlight.endReason, "strikes");
   assert.equal(startEvent.table.deckCount, 50, "start snapshot is the post-deal board");
   assert.equal(startEvent.table.lastResult, null);
   assert.equal(clueSnapshotEvent.table.lastResult, null, "clue snapshot carries no play result");
@@ -235,7 +270,10 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
   assert.equal(replay.body.layoutEvents.length, 1, "consecutive same-seat checkpoints supersede");
   assert.equal(replay.body.layoutEvents[0].seat, "A");
   assert.equal(replay.body.layoutEvents[0].cardId, undefined);
-  assert.deepEqual(replay.body.layoutEvents[0].hands.A[0].layout, { x: 42, y: 46, rotation: 7 });
+  assert.deepEqual(
+    replay.body.layoutEvents[0].hands.A.find((card) => card.id === aHiddenCard.id).layout,
+    { x: 42, y: 46, rotation: 7 }
+  );
   assert.ok(replay.body.layoutEvents[0].knowledge.A.cards[aHiddenCard.id]);
 
   const replayCsv = await readReplayCsv(scenario.room.code);
