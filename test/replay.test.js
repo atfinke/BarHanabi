@@ -1,12 +1,24 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
+const net = require("node:net");
 
 const PORT = 3297;
 const BASE = "http://127.0.0.1:" + PORT;
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
+  });
 }
 
 async function waitForServer(process, base = BASE) {
@@ -408,10 +420,11 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
 });
 
 test("forfeit ends the active game and preserves replay data", async (t) => {
-  const base = "http://127.0.0.1:" + (PORT + 1);
+  const port = await freePort();
+  const base = "http://127.0.0.1:" + port;
   const server = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
-    env: { ...process.env, PORT: String(PORT + 1) },
+    env: { ...process.env, PORT: String(port) },
     stdio: ["ignore", "pipe", "pipe"]
   });
   t.after(() => server.kill("SIGTERM"));
