@@ -138,6 +138,7 @@ const replayPreviousButton = document.querySelector("#replayPreviousButton");
 const replayNextButton = document.querySelector("#replayNextButton");
 const replayTimeline = document.querySelector("#replayTimeline");
 const replayCsvButton = document.querySelector("#replayCsvButton");
+const replayRecapButton = document.querySelector("#replayRecapButton");
 const selfFlipButton = document.querySelector("#selfFlipButton");
 const opponentFlipButton = document.querySelector("#opponentFlipButton");
 const neededDiscardPile = document.querySelector("#neededDiscardPile");
@@ -209,6 +210,7 @@ replayPreviousButton.addEventListener("click", () => stepReplay(-1));
 replayNextButton.addEventListener("click", () => stepReplay(1));
 replayTimeline.addEventListener("input", () => setReplayIndex(Number(replayTimeline.value)));
 replayCsvButton.addEventListener("click", () => downloadReplayCsv());
+replayRecapButton.addEventListener("click", () => copyReplayRecap());
 selfFlipButton.addEventListener("click", () => toggleReplayHandView(state.mySeat));
 opponentFlipButton.addEventListener("click", () => toggleReplayHandView(opponentSeat()));
 clueChooserCancel.addEventListener("click", () => closeClueChooser(null));
@@ -963,6 +965,7 @@ function renderReplayPanel() {
   replayNextButton.disabled = !replayIsOpen() || index >= events.length - 1;
   replayTimeline.disabled = !replayIsOpen();
   replayCsvButton.disabled = !isEnded;
+  replayRecapButton.disabled = !isEnded;
   replayTimeline.max = String(Math.max(0, events.length - 1));
   replayTimeline.value = String(index);
   if (replayIsOpen()) {
@@ -1075,6 +1078,31 @@ function downloadReplayCsv() {
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
+}
+
+async function copyReplayRecap() {
+  if (!state.room || state.room.status !== "ended") return;
+
+  const requestedCode = state.room.code;
+  try {
+    const response = await fetch(`/api/recap.txt?code=${encodeURIComponent(requestedCode)}`);
+    const text = await response.text();
+    if (state.room?.code !== requestedCode) return;
+    if (!response.ok) {
+      let message = "Recap unavailable.";
+      try {
+        message = JSON.parse(text).error || message;
+      } catch {}
+      throw new Error(message);
+    }
+    await copyTextToClipboard(text);
+    if (state.room?.code !== requestedCode) return;
+    showToast("Recap copied.");
+  } catch (error) {
+    if (state.room?.code === requestedCode) {
+      showToast(error.message);
+    }
+  }
 }
 
 function defaultReplayHandViews() {

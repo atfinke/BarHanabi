@@ -79,6 +79,12 @@ async function readReplayCsv(code) {
   return { response, text };
 }
 
+async function readReplayRecap(code) {
+  const response = await fetch(`${BASE}/api/recap.txt?code=${encodeURIComponent(code)}`);
+  const text = await response.text();
+  return { response, text };
+}
+
 function csvRows(text) {
   const [headerLine, ...rowLines] = text.trim().split("\n");
   const headers = headerLine.split(",");
@@ -136,6 +142,9 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
   assert.equal(activeReplay.body.error, "Replay is available after the game ends.");
   const activeReplayCsv = await readReplayCsv(scenario.room.code);
   assert.equal(activeReplayCsv.response.status, 400, activeReplayCsv.text);
+  const activeRecap = await readReplayRecap(scenario.room.code);
+  assert.equal(activeRecap.response.status, 400, activeRecap.text);
+  assert.match(activeRecap.text, /Recap is available after the game ends/);
 
   const aHiddenCard = playerForSeat(scenario.stateA, "A").hand.find((card) => card.id === scenario.rainbowMoveCard.id);
   assert.ok(aHiddenCard, "expected the local hidden hand to contain the visible rainbow card id");
@@ -275,6 +284,21 @@ test("ended games expose replay actions, layout checkpoints, and perspective kno
     { x: 42, y: 46, rotation: 7 }
   );
   assert.ok(replay.body.layoutEvents[0].knowledge.A.cards[aHiddenCard.id]);
+
+  const replayRecap = await readReplayRecap(scenario.room.code);
+  assert.equal(replayRecap.response.status, 200, replayRecap.text);
+  assert.match(replayRecap.response.headers.get("content-type"), /^text\/plain\b/);
+  assert.match(
+    replayRecap.response.headers.get("content-disposition"),
+    new RegExp(`attachment; filename="bar-hanabi-${scenario.room.code}-recap.txt"`)
+  );
+  assert.match(replayRecap.text, new RegExp(`Bar Hanabi ${scenario.room.code}`));
+  assert.match(replayRecap.text, /Score: 0\/30 \(0%\)/);
+  assert.match(replayRecap.text, /Result: Bombs/);
+  assert.match(replayRecap.text, /Highlights:/);
+  assert.match(replayRecap.text, /Move 1: A gave B/);
+  assert.match(replayRecap.text, /Move 2: B missed with/);
+  assert.match(replayRecap.text, /ended the game/);
 
   const replayCsv = await readReplayCsv(scenario.room.code);
   assert.equal(replayCsv.response.status, 200, replayCsv.text);
