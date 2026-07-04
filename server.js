@@ -780,6 +780,9 @@ function endGameMessage(room, reason) {
   if (reason === "strikes") {
     return `Third bomb hit. Game over. ${score}`;
   }
+  if (reason === "forfeit") {
+    return `Game forfeited. ${score}`;
+  }
   return `Final round complete. ${score}`;
 }
 
@@ -824,6 +827,13 @@ function handleAction(room, action) {
 
   const player = getPlayer(room, viewerSeat);
   if (!player) throw new Error("Unknown seat.");
+
+  if (type === "forfeit") {
+    assertGameInProgress(room);
+    endGame(room, "forfeit");
+    touch(room);
+    return room;
+  }
 
   if (type === "draw") {
     const card = drawToHand(room, player);

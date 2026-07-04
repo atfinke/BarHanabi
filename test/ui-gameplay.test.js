@@ -376,6 +376,7 @@ test("mobile UI exposes current controls and omits retired controls", () => {
     /id="manualRotationToggle"/,
     /id="selfClueLabel"/,
     /id="resetButton"/,
+    /id="forfeitButton"/,
     /id="turnStatus"[\s\S]*Double tap to switch player/,
     /id="hintCount"/,
     /id="bombCount"/,
@@ -386,6 +387,7 @@ test("mobile UI exposes current controls and omits retired controls", () => {
   }
 
   assert.match(html, /id="resetButton"[\s\S]*>Restart<\/button>/);
+  assert.match(html, /id="forfeitButton"[\s\S]*>Forfeit<\/button>/);
   assert.doesNotMatch(html, /id="resetButton"[^>]*danger-outline/);
 
   for (const retired of [
@@ -414,6 +416,7 @@ test("game settings live in a clue-style popover", () => {
   assert.match(html, /id="settingsPopover"[\s\S]*aria-hidden="true"/);
   assert.match(html, /class="settings-popover-header"[\s\S]*id="settingsPopoverTitle">Settings<\/h2>/);
   assert.match(html, /class="settings-controls"[\s\S]*id="resetButton"[\s\S]*Restart/);
+  assert.match(html, /class="settings-controls"[\s\S]*id="forfeitButton"[\s\S]*Forfeit/);
   assert.match(html, /for="autoCluePreviewToggle"[\s\S]*Auto Clue[\s\S]*id="autoCluePreviewToggle"/);
   assert.match(html, /for="manualRotationToggle"[\s\S]*Manual Rotation[\s\S]*id="manualRotationToggle"/);
   assert.match(html, /for="replayLayoutStepsToggle"[\s\S]*Replay Layout Steps[\s\S]*id="replayLayoutStepsToggle"/);
